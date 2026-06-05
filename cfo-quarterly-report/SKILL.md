@@ -1,48 +1,35 @@
 ---
 name: cfo-quarterly-report
-description: "Generate the polished BlazingCDN QUARTERLY financial report as a formatted Word (.docx): same house style as the monthly report but quarter-framed, with QoQ + YoY-by-quarter comparisons, a quarterly revenue trend bar-table, a Top-10 customers table (This Q / Prior Q / QoQ% / Same-Q-LY), a Top-10 concentration bar, and the quarter-only metrics promoted to first-class: NRR, GRR, Magic Number, Rule of 40. Runs as a single zero-dependency Node ESM file (build.mjs) — no npm packages, no Python, no images. Use at quarter close once the data workers have returned quarterly aggregates. Do NOT use for monthly reports (use cfo-monthly-report)."
+description: "Generate the polished BlazingCDN QUARTERLY financial report as a formatted Word (.docx): same house style as the monthly report but quarter-framed, with QoQ + YoY-by-quarter comparisons, a quarterly revenue trend bar-table, a Top-10 customers table (This Q / Prior Q / QoQ% / Same-Q-LY), a Top-10 concentration bar, and the quarter-only metrics promoted to first-class: NRR, GRR, Magic Number, Rule of 40. This skill is a single self-contained markdown file: it embeds a zero-dependency Node ESM engine (no npm, no Python, no images) plus the input contract. Use at quarter close once the data workers have returned quarterly aggregates. Do NOT use for monthly reports (use cfo-monthly-report)."
 ---
 
-# CFO Quarterly Financial Report  (zero-dependency .mjs)
+# CFO Quarterly Financial Report  (single-file .md skill)
 
-Same deterministic, dependency-free engine as the monthly skill (Node standard library only — no `docx` npm,
-no Python, no images), separate so quarterly logic never loads on a monthly run. Layout frozen in `build.mjs`;
-only `input.json` numbers change.
+Everything needed is inside THIS markdown file: the same zero-dependency render engine as the monthly skill
+(Node standard library only — no `docx` npm, no Python, no images) and the input contract. Separate skill so
+quarterly logic never loads on a monthly run. Deterministic: same engine → identical design; only numbers change.
 
-## Files in this skill
-- `build.mjs` — compute + render + hand-built .docx writer. **Run this.**
-- `schema/example_input.json` — input contract (Q1 2026 worked example).
-- (this `SKILL.md` embeds the full `build.mjs` source at the bottom as a fallback — see "If .mjs won't load").
-
-## When to run
-At **quarter close**, after the data workers return quarterly aggregates:
-HubSpot Deals Worker → quarterly revenue series, top clients by quarter, quarterly decomposition (include
-`decomposition.starting_recurring` so NRR/GRR compute); Subscription Tracker Worker → quarter expense lines.
-Optionally `inputs.prior_q_sm_usd` (prior-quarter S&M spend) so the Magic Number computes.
-
-## Run
-```bash
-node build.mjs <input.json> <output.docx>
-# e.g. node build.mjs input.json "BlazingCDN_Quarterly_Financial_Report_Q1_2026.docx"
-```
-Requires only `node` (v18+). No `npm install`. No Python.
+## How to produce a report (runtime steps)
+1. **Materialize the engine.** Copy the entire `build.mjs` code block (under "Engine" below) verbatim into a
+   file named `build.mjs` in your workspace.
+2. **Assemble the input.** Build `input.json` from the two data workers' quarterly JSON + your `cfo_narrative`,
+   using the "Example input" block below as the exact contract. Include `decomposition.starting_recurring` so
+   NRR/GRR compute, and optionally `inputs.prior_q_sm_usd` (prior-quarter S&M) so the Magic Number computes.
+3. **Run:** `node build.mjs input.json "BlazingCDN_Quarterly_Financial_Report_<Q_Year>.docx"` (needs only `node`
+   v18+; no `npm install`).
+4. Review, save to Google Drive "CFO", post the link to Hermes.
 
 ## What differs from monthly
 - Trend bar-table and tables are by **quarter**.
 - Section B is **QoQ** (this quarter vs prior quarter) plus same-quarter-last-year.
 - Section C is the **Top 10** with This Q / Prior Q / QoQ% / Same Q LY.
-- Metrics table computes **NRR / GRR** (from `starting_recurring`), **Magic Number** (net-new ARR ÷ prior-Q S&M),
-  and frames **Rule of 40** (FCF margin stays an OpEx-only proxy until a full P&L exists).
-- ARR is the quarter-exit run-rate (exit MRR × 12).
+- Metrics compute **NRR / GRR** (from `starting_recurring`), **Magic Number** (net-new ARR ÷ prior-Q S&M), and
+  frame **Rule of 40** (FCF margin stays an OpEx-only proxy until a full P&L exists). ARR = quarter-exit MRR × 12.
 
-## Hub ID note
+## NOTE — production Hub ID
 Put the single canonical production Hub ID in `meta.source_portal` (open ambiguity 143144902 vs 145006611).
 
-## If .mjs won't load in your PaperClip (md + json only)
-The complete `build.mjs` source is reproduced verbatim below. At runtime, write it to `build.mjs` and run
-`node build.mjs input.json out.docx`. Byte-identical to the shipped `build.mjs`.
-
-<details><summary>build.mjs — full source (copy verbatim to a file, then run with node)</summary>
+## Engine — build.mjs  (copy verbatim into a file named build.mjs)
 
 ```javascript
 #!/usr/bin/env node
@@ -424,4 +411,72 @@ fs.writeFileSync(out, render(compute(data)));
 console.log('✓ wrote', out);
 ```
 
-</details>
+## Example input  (the exact contract — save your real data as input.json in this shape)
+
+```json
+{
+  "meta": {
+    "company":"BlazingCDN","report_type":"quarterly","period_label":"Q1 2026","period":"2026-Q1",
+    "prepared_by":"Mike Scarpelli, CFO","date":"2026-04-05",
+    "for":"Hermes (Chief of Staff) \u2192 CEO",
+    "source_portal":"HubSpot production portal (Hub <CONFIRM_PROD_HUB_ID>), Deals \u2192 \"Current Clients Pipeline\". Expenses: Google Drive \"CFO\"",
+    "fx_eur_usd":1.08,"currency":"USD","pre_batch":false
+  },
+  "inputs": { "prior_q_sm_usd": 3500 },
+  "revenue": {
+    "focal_quarter":"Q1 2026",
+    "unique_clients":118,
+    "quarterly_series":[
+      {"quarter":"Q1 2025","count":159,"revenue":55194.49},
+      {"quarter":"Q2 2025","count":193,"revenue":71800.91},
+      {"quarter":"Q3 2025","count":214,"revenue":77045.41},
+      {"quarter":"Q4 2025","count":219,"revenue":94478.34},
+      {"quarter":"Q1 2026","count":256,"revenue":102774.98}
+    ],
+    "plan_split":{"recurring":{"revenue":102200.00,"clients":92},"payg":{"revenue":574.98,"clients":7}},
+    "top_clients":[
+      {"name":"eliaskhan.it","focal":13675.00,"prior_q":11200.00,"yoy_same_q":9800.00,"new_logo":false},
+      {"name":"rabin.yor\u2026","focal":12320.00,"prior_q":11050.00,"yoy_same_q":10500.00,"new_logo":false},
+      {"name":"itgroup (avanquest)","focal":8200.00,"prior_q":0.00,"yoy_same_q":0.00,"new_logo":true},
+      {"name":"a.ruin (epom)","focal":6410.55,"prior_q":3900.00,"yoy_same_q":0.00,"new_logo":true},
+      {"name":"yashwanth (moengage)","focal":6000.00,"prior_q":2250.00,"yoy_same_q":0.00,"new_logo":true},
+      {"name":"secretfy.corp","focal":5500.00,"prior_q":4000.00,"yoy_same_q":0.00,"new_logo":true},
+      {"name":"arik.holaspark","focal":5200.00,"prior_q":4800.00,"yoy_same_q":4100.00,"new_logo":false},
+      {"name":"theqooking","focal":3148.02,"prior_q":2900.00,"yoy_same_q":2600.00,"new_logo":false},
+      {"name":"manuel.skelton","focal":2103.00,"prior_q":900.00,"yoy_same_q":0.00,"new_logo":true},
+      {"name":"bret.cityspark","focal":1753.61,"prior_q":1600.00,"yoy_same_q":1400.00,"new_logo":false}
+    ],
+    "concentration":{"top10_share":0.629,"top1_share":0.133,"top1_name":"eliaskhan.it"},
+    "decomposition":{
+      "window":"Q1 2026 vs Q4 2025","material_threshold":500,"material_clients":22,
+      "starting_recurring":89000.00,
+      "new":{"amount":8200.00,"clients":1},
+      "expansion":{"amount":12450.00,"clients":8},
+      "contraction":{"amount":-4180.00,"clients":3},
+      "churn":{"amount":-1200.00,"clients":1}
+    }
+  },
+  "expenses":{
+    "month":"Q1 2026","full_pl":false,"recurring_tool_eur":1581,
+    "lines":[
+      {"category":"Marketing","detail":"Google Ads quarter","eur":3207.00},
+      {"category":"Product & AI","detail":"OpenAI + Claude + Jina","eur":870.00},
+      {"category":"Ops & infra","detail":"HubSpot + make + Atlassian + GCP","eur":525.00},
+      {"category":"Sales tooling","detail":"SalesQL + Zapmail + QEV","eur":396.00}
+    ]
+  },
+  "cfo_narrative":{
+    "bottom_line":[
+      "Q1 2026 revenue $102.8K, +8.8% QoQ and +86% YoY \u2014 strongest quarter on record, no logo churn at the material tier except one small loss.",
+      "Quarterly NRR and GRR are now computable (no data gap this quarter) \u2014 see metrics table; expansion outpaced contraction.",
+      "Concentration eased to 63% top-10 (from 87% on a single-month view) as the book broadened across net-new logos.",
+      "Still no full P&L \u2014 Rule-of-40 FCF margin is an OpEx-only proxy until CDN COGS and payroll land.",
+      "Working run-rate: ARR \u2248 $411K (quarter-exit)."
+    ],
+    "top_note":"Net-new logos landed over the past year now populate half the top 10 \u2014 the diversification engine is working.",
+    "concentration_note":"Top-10 down to 63% \u2014 healthier than the single-month view. Keep the QBR program on the top 10 and hold the <70% target.",
+    "decomp_note":"Expansion (+$12.5K, 8 clients) outpaced contraction (\u2212$4.2K) and the single small churn (\u2212$1.2K). This feeds the quarterly NRR/GRR below.",
+    "arr_recommendation":"Plan against ARR \u2248 $411K (quarter-exit run-rate); the trend is up four straight quarters."
+  }
+}
+```

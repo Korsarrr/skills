@@ -1,49 +1,36 @@
 ---
 name: cfo-monthly-report
-description: "Generate the polished BlazingCDN MONTHLY financial report as a formatted Word (.docx): title band, KPI cards, data-integrity callouts, formatted tables with status colors, a monthly revenue trend bar-table, a Top-20 customers table with This-mo / Prev-mo / MoM% / T3M / Same-month-LY comparisons, and a Top-10 concentration bar. Runs as a single zero-dependency Node ESM file (build.mjs) — no npm packages, no Python, no images. Use on the 5th-of-month cycle once the HubSpot Deals Worker (revenue JSON) and Subscription Tracker Worker (expense JSON) have returned data and the CFO has assembled input.json. Do NOT use for quarterly reports (use cfo-quarterly-report)."
+description: "Generate the polished BlazingCDN MONTHLY financial report as a formatted Word (.docx): title band, KPI cards, data-integrity callouts, formatted tables with status colors, a monthly revenue trend bar-table, a Top-20 customers table with This-mo / Prev-mo / MoM% / T3M / Same-month-LY comparisons, and a Top-10 concentration bar. This skill is a single self-contained markdown file: it embeds a zero-dependency Node ESM engine (no npm, no Python, no images) plus the input contract. Use on the 5th-of-month cycle once the HubSpot Deals Worker (revenue JSON) and Subscription Tracker Worker (expense JSON) have returned data and the CFO has assembled the input. Do NOT use for quarterly reports (use cfo-quarterly-report)."
 ---
 
-# CFO Monthly Financial Report  (zero-dependency .mjs)
+# CFO Monthly Financial Report  (single-file .md skill)
 
-Deterministic render: same code → identical design every month; only the numbers in `input.json` change.
-`build.mjs` does BOTH the metric math and the Word rendering. It uses **only Node's standard library** —
-no `docx` npm package, no matplotlib, no Python, no separate scripts, no network. Charts are drawn as
-shaded/▆block-bar table cells (no images), so nothing extra is needed at runtime.
+Everything needed is inside THIS markdown file: a zero-dependency render engine (Node standard library only —
+no `docx` npm, no matplotlib, no Python, no images, no network) and the input contract. Deterministic: same
+engine → identical design every month; only the numbers change. Charts are drawn as shaded / ▆block-bar table
+cells inside the Word file, so nothing needs to be installed.
 
-## Files in this skill
-- `build.mjs`  — the whole engine (compute + render + a hand-built .docx writer). **Run this.**
-- `schema/example_input.json` — the exact input contract (May 2026 worked example).
-- (this `SKILL.md` also embeds the full `build.mjs` source at the bottom as a fallback — see "If .mjs won't load").
-
-## When to run
-On the **5th-of-month** cycle, AFTER the billing batch loads and both data workers have returned:
-HubSpot Deals Worker → revenue data; Subscription Tracker Worker → expense data.
-
-## What the CFO does (the only manual part)
-1. Assemble `input.json` from the two workers' JSON + add the qualitative `cfo_narrative`
-   (bottom_line, notes). See `schema/example_input.json` for the contract. The CFO writes only judgement;
-   all math (ARR/MRR, YoY, T3M + backfill, net result, margins, tool-spend %, MoM per client, concentration,
-   integrity-flag auto-detection, metric statuses) is done by build.mjs.
-2. Run it (below).
-3. Review, save to Google Drive "CFO", post the link to Hermes.
-
-## Run
-```bash
-node build.mjs <input.json> <output.docx>
-# e.g. node build.mjs input.json "BlazingCDN_Monthly_Financial_Report_May_2026.docx"
-```
-Requires only `node` (v18+). No `npm install`. No Python.
+## How to produce a report (runtime steps)
+1. **Materialize the engine.** Copy the entire `build.mjs` code block (under "Engine" below) verbatim into a
+   file named `build.mjs` in your workspace.
+2. **Assemble the input.** Build `input.json` from the two data workers' JSON results + your own `cfo_narrative`
+   (bottom_line, notes). Use the "Example input" block below as the exact contract. Revenue numbers come from the
+   HubSpot Deals Worker; expense lines from the Subscription Tracker Worker. You write only judgement — all math
+   (ARR/MRR, YoY, T3M + backfill, net result, margins, tool-spend %, per-client MoM, concentration,
+   integrity-flag detection, metric statuses) is done by the engine.
+3. **Run:** `node build.mjs input.json "BlazingCDN_Monthly_Financial_Report_<Month_Year>.docx"` (needs only `node`
+   v18+; no `npm install`).
+4. Review, save to Google Drive "CFO", post the link to Hermes.
 
 ## Section C — Top 20 customers
 Top-20 table with four comparisons per client so new logos and patterns pop:
 **This mo · Prev mo (previous complete billed month) · MoM% (green ▲ / red ▼) · T3M · Same mo last year**.
-Net-new logos (YoY) are flagged ★ and coloured; the "This mo" cell carries a little inline bar.
-If the literal previous month is a gap, Prev/MoM read "—" and a footnote names the skipped month.
-**Concentration stays Top-10** (Top-1 / Top 2–10 / Rest stacked bar) — that risk metric is unchanged.
+Net-new logos (YoY) are flagged ★ and coloured; the "This mo" cell carries a small inline bar. If the literal
+previous month is a gap, Prev/MoM read "—" and a footnote names the skipped month.
+**Concentration stays Top-10** (Top-1 / Top 2–10 / Rest stacked bar).
 
 ## Integrity behaviour (automatic)
-- Any $0 month in the series is auto-flagged as a probable missing batch; trailing metrics spanning it are
-  marked PROVISIONAL.
+- Any $0 month in the series is auto-flagged as a probable missing batch; trailing metrics spanning it are PROVISIONAL.
 - If `expenses.full_pl` is false, margins are labelled "net of tracked OpEx," not GAAP.
 - If `meta.pre_batch` is true, the report is labelled provisional with the close date.
 
@@ -51,12 +38,7 @@ If the literal previous month is a gap, Prev/MoM read "—" and a footnote names
 The example uses a `<CONFIRM_PROD_HUB_ID>` placeholder (open ambiguity 143144902 vs 145006611). Put the single
 canonical production Hub ID in `meta.source_portal` before running.
 
-## If .mjs won't load in your PaperClip (md + json only)
-PaperClip loads this `SKILL.md` (markdown) regardless. The complete `build.mjs` source is reproduced verbatim
-below. At runtime, write it to a file named `build.mjs` in the workspace and run `node build.mjs input.json out.docx`.
-It is byte-identical to the `build.mjs` file shipped alongside.
-
-<details><summary>build.mjs — full source (copy verbatim to a file, then run with node)</summary>
+## Engine — build.mjs  (copy verbatim into a file named build.mjs)
 
 ```javascript
 #!/usr/bin/env node
@@ -444,4 +426,108 @@ fs.writeFileSync(out, render(compute(data)));
 console.log('✓ wrote', out);
 ```
 
-</details>
+## Example input  (the exact contract — save your real data as input.json in this shape)
+
+```json
+{
+  "meta": {
+    "company": "BlazingCDN",
+    "report_type": "monthly",
+    "period_label": "May 2026",
+    "period": "2026-05",
+    "prepared_by": "Mike Scarpelli, CFO",
+    "date": "2026-06-04",
+    "for": "Hermes (Chief of Staff) \u2192 CEO",
+    "source_portal": "HubSpot production portal (Hub <CONFIRM_PROD_HUB_ID>), Deals \u2192 \"Current Clients Pipeline\". Expenses: Google Drive \"CFO\"",
+    "fx_eur_usd": 1.08,
+    "currency": "USD",
+    "pre_batch": true,
+    "close_date": "2026-06-05"
+  },
+  "revenue": {
+    "focal_month": "2026-05",
+    "unique_clients": 51,
+    "monthly_series": [
+      {"month":"2024-12","count":42,"revenue":12019.25},
+      {"month":"2025-01","count":49,"revenue":19263.70},
+      {"month":"2025-02","count":58,"revenue":15112.45},
+      {"month":"2025-03","count":52,"revenue":20818.34},
+      {"month":"2025-04","count":66,"revenue":22933.86},
+      {"month":"2025-05","count":65,"revenue":23053.53},
+      {"month":"2025-06","count":63,"revenue":25663.82},
+      {"month":"2025-07","count":71,"revenue":19082.55},
+      {"month":"2025-08","count":70,"revenue":27007.60},
+      {"month":"2025-09","count":73,"revenue":30955.26},
+      {"month":"2025-10","count":80,"revenue":34083.66},
+      {"month":"2025-11","count":81,"revenue":31364.80},
+      {"month":"2025-12","count":58,"revenue":29029.88},
+      {"month":"2026-01","count":84,"revenue":32340.04},
+      {"month":"2026-02","count":75,"revenue":26590.56},
+      {"month":"2026-03","count":97,"revenue":43844.38},
+      {"month":"2026-04","count":0,"revenue":0.00},
+      {"month":"2026-05","count":68,"revenue":27787.01}
+    ],
+    "plan_split": {
+      "recurring": {"revenue":27672.19,"clients":47},
+      "payg": {"revenue":114.82,"clients":4}
+    },
+    "top_clients": [
+      {"name":"rabin.yor\u2026","focal":4875.98,"prev_month":4976.69,"t3m":9852.67,"yoy_same_month":4743.60,"new_logo":false},
+      {"name":"eliaskhan.it","focal":4675.00,"prev_month":8000.00,"t3m":12675.00,"yoy_same_month":5500.00,"new_logo":false},
+      {"name":"itgroup (avanquest)","focal":4000.00,"prev_month":200.00,"t3m":4200.00,"yoy_same_month":0.00,"new_logo":true},
+      {"name":"yashwanth (moengage)","focal":2250.00,"prev_month":2250.00,"t3m":4500.00,"yoy_same_month":0.00,"new_logo":true},
+      {"name":"a.ruin (epom)","focal":2000.00,"prev_month":2410.55,"t3m":4410.55,"yoy_same_month":0.00,"new_logo":true},
+      {"name":"secretfy.corp","focal":2000.00,"prev_month":2000.00,"t3m":4000.00,"yoy_same_month":0.00,"new_logo":true},
+      {"name":"arik.holaspark","focal":2000.00,"prev_month":1500.00,"t3m":3500.00,"yoy_same_month":3700.00,"new_logo":false},
+      {"name":"theqooking","focal":1114.29,"prev_month":1033.73,"t3m":2148.02,"yoy_same_month":1261.90,"new_logo":false},
+      {"name":"manuel.skelton","focal":603.00,"prev_month":900.00,"t3m":1503.00,"yoy_same_month":0.00,"new_logo":true},
+      {"name":"bret.cityspark","focal":592.56,"prev_month":561.05,"t3m":1153.61,"yoy_same_month":620.20,"new_logo":false},
+      {"name":"devops.nordix","focal":430.00,"prev_month":470.00,"t3m":900.00,"yoy_same_month":300.00,"new_logo":false},
+      {"name":"media.streamhub","focal":398.00,"prev_month":360.00,"t3m":758.00,"yoy_same_month":0.00,"new_logo":true},
+      {"name":"cdn.playwave","focal":360.00,"prev_month":470.00,"t3m":830.00,"yoy_same_month":410.00,"new_logo":false},
+      {"name":"ott.brightcast","focal":322.00,"prev_month":305.00,"t3m":627.00,"yoy_same_month":0.00,"new_logo":true},
+      {"name":"game.patchgrid","focal":295.00,"prev_month":270.00,"t3m":565.00,"yoy_same_month":240.00,"new_logo":false},
+      {"name":"saas.fluxdeliver","focal":268.00,"prev_month":268.00,"t3m":536.00,"yoy_same_month":260.00,"new_logo":false},
+      {"name":"vod.castline","focal":242.00,"prev_month":210.00,"t3m":452.00,"yoy_same_month":0.00,"new_logo":true},
+      {"name":"web.edgepush","focal":210.00,"prev_month":250.00,"t3m":460.00,"yoy_same_month":220.00,"new_logo":false},
+      {"name":"img.snapcdn","focal":182.00,"prev_month":160.00,"t3m":342.00,"yoy_same_month":140.00,"new_logo":false},
+      {"name":"api.routemesh","focal":158.00,"prev_month":150.00,"t3m":308.00,"yoy_same_month":0.00,"new_logo":true}
+    ],
+    "concentration": {"top10_share":0.868,"top1_share":0.175,"top1_name":"rabin.yor\u2026"},
+    "decomposition": {
+      "window":"Mar\u2013May 2026","material_threshold":500,"material_clients":14,
+      "new":{"amount":4200.00,"clients":1},
+      "expansion":{"amount":14418.43,"clients":4},
+      "contraction":{"amount":-32556.01,"clients":9},
+      "churn":{"amount":0.00,"clients":0}
+    }
+  },
+  "expenses": {
+    "month": "2026-05",
+    "full_pl": false,
+    "recurring_tool_eur": 527,
+    "lines": [
+      {"category":"Marketing","detail":"Google Ads \u20AC1,069; LinkedIn \u20AC0","eur":1069.00},
+      {"category":"Product & AI","detail":"OpenAI \u20AC120; Claude \u20AC120; Jina \u20AC50","eur":290.00},
+      {"category":"Ops & infra","detail":"HubSpot \u20AC98; make.com \u20AC17; Atlassian \u20AC20; GCP \u20AC40","eur":175.00},
+      {"category":"Sales tooling","detail":"SalesQL \u20AC68; Zapmail \u20AC34; QEV \u20AC30","eur":132.00}
+    ]
+  },
+  "cfo_narrative": {
+    "bottom_line": [
+      "May 2026 revenue $27.8K, +20.5% YoY \u2014 real, clean growth, driven by 5 net-new top accounts landed over the past year. Zero logo churn.",
+      "Headline trend metrics (T3M, NRR, GRR) are NOT real \u2014 artifacts of the missing April batch. #1 action is backfilling April; until then ignore them.",
+      "True margins and runway are not yet producible \u2014 the data room lacks CDN COGS, payroll and cash balance. Closing that gap unlocks Rule-of-40 / Magic Number / runway.",
+      "Risk to watch: 87% revenue concentration in the top 10 accounts.",
+      "Working run-rate to plan against: ARR \u2248 $390K (smoothed)."
+    ],
+    "plan_note": "Recurrence heuristic \u2014 no contractual plan_type field yet. Recommendation: add a plan_type deal property so the split is exact.",
+    "decomp_note": "The large contraction is almost entirely the April hole (every recurring payer is missing one month in the window). Zero churn is the real signal \u2014 no clients fully lost. Re-run after backfill.",
+    "top_note": "Good-news signal: 5 of the top 10 had $0 in May 2025 \u2014 these net-new accounts are the real engine behind +20.5% YoY.",
+    "concentration_note": "With 87% of revenue in 10 accounts, loss of any single top account is material. Recommend a named-account QBR/retention program for the top 10 and a diversification target (top-10 < 70% by year-end).",
+    "hygiene_note": "Data hygiene: one $1.00 test deal and two small negatives (\u2212$9.24, \u2212$12.27, likely refunds) in the log \u2014 immaterial; clean up the test record.",
+    "nrr_text": "75.1%",
+    "grr_text": "57.2%"
+  }
+}
+```
