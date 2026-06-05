@@ -1,50 +1,3 @@
----
-name: cfo-quarterly-report
-description: "Generate the polished BlazingCDN QUARTERLY financial report as a formatted Word (.docx): same house style as the monthly report but quarter-framed, with QoQ + YoY-by-quarter comparisons, a quarterly revenue trend bar-table, a Top-10 customers table (This Q / Prior Q / QoQ% / Same-Q-LY), a Top-10 concentration bar, and the quarter-only metrics promoted to first-class: NRR, GRR, Magic Number, Rule of 40. Runs as a single zero-dependency Node ESM file (build.mjs) — no npm packages, no Python, no images. Use at quarter close once the data workers have returned quarterly aggregates. Do NOT use for monthly reports (use cfo-monthly-report)."
----
-
-# CFO Quarterly Financial Report  (zero-dependency .mjs)
-
-Same deterministic, dependency-free engine as the monthly skill (Node standard library only — no `docx` npm,
-no Python, no images), separate so quarterly logic never loads on a monthly run. Layout frozen in `build.mjs`;
-only `input.json` numbers change.
-
-## Files in this skill
-- `build.mjs` — compute + render + hand-built .docx writer. **Run this.**
-- `schema/example_input.json` — input contract (Q1 2026 worked example).
-- (this `SKILL.md` embeds the full `build.mjs` source at the bottom as a fallback — see "If .mjs won't load").
-
-## When to run
-At **quarter close**, after the data workers return quarterly aggregates:
-HubSpot Deals Worker → quarterly revenue series, top clients by quarter, quarterly decomposition (include
-`decomposition.starting_recurring` so NRR/GRR compute); Subscription Tracker Worker → quarter expense lines.
-Optionally `inputs.prior_q_sm_usd` (prior-quarter S&M spend) so the Magic Number computes.
-
-## Run
-```bash
-node build.mjs <input.json> <output.docx>
-# e.g. node build.mjs input.json "BlazingCDN_Quarterly_Financial_Report_Q1_2026.docx"
-```
-Requires only `node` (v18+). No `npm install`. No Python.
-
-## What differs from monthly
-- Trend bar-table and tables are by **quarter**.
-- Section B is **QoQ** (this quarter vs prior quarter) plus same-quarter-last-year.
-- Section C is the **Top 10** with This Q / Prior Q / QoQ% / Same Q LY.
-- Metrics table computes **NRR / GRR** (from `starting_recurring`), **Magic Number** (net-new ARR ÷ prior-Q S&M),
-  and frames **Rule of 40** (FCF margin stays an OpEx-only proxy until a full P&L exists).
-- ARR is the quarter-exit run-rate (exit MRR × 12).
-
-## Hub ID note
-Put the single canonical production Hub ID in `meta.source_portal` (open ambiguity 143144902 vs 145006611).
-
-## If .mjs won't load in your PaperClip (md + json only)
-The complete `build.mjs` source is reproduced verbatim below. At runtime, write it to `build.mjs` and run
-`node build.mjs input.json out.docx`. Byte-identical to the shipped `build.mjs`.
-
-<details><summary>build.mjs — full source (copy verbatim to a file, then run with node)</summary>
-
-```javascript
 #!/usr/bin/env node
 /*
  * cfo-monthly-report / build.mjs  — ZERO external dependencies (Node stdlib only).
@@ -422,6 +375,3 @@ const inp=process.argv[2]||'input.json', out=process.argv[3]||'Monthly_Financial
 const data=JSON.parse(fs.readFileSync(inp,'utf8'));
 fs.writeFileSync(out, render(compute(data)));
 console.log('✓ wrote', out);
-```
-
-</details>

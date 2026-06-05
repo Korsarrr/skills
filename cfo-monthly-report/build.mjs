@@ -1,50 +1,3 @@
----
-name: cfo-quarterly-report
-description: "Generate the polished BlazingCDN QUARTERLY financial report as a formatted Word (.docx): same house style as the monthly report but quarter-framed, with QoQ + YoY-by-quarter comparisons, a quarterly revenue trend bar-table, a Top-10 customers table (This Q / Prior Q / QoQ% / Same-Q-LY), a Top-10 concentration bar, and the quarter-only metrics promoted to first-class: NRR, GRR, Magic Number, Rule of 40. Runs as a single zero-dependency Node ESM file (build.mjs) — no npm packages, no Python, no images. Use at quarter close once the data workers have returned quarterly aggregates. Do NOT use for monthly reports (use cfo-monthly-report)."
----
-
-# CFO Quarterly Financial Report  (zero-dependency .mjs)
-
-Same deterministic, dependency-free engine as the monthly skill (Node standard library only — no `docx` npm,
-no Python, no images), separate so quarterly logic never loads on a monthly run. Layout frozen in `build.mjs`;
-only `input.json` numbers change.
-
-## Files in this skill
-- `build.mjs` — compute + render + hand-built .docx writer. **Run this.**
-- `schema/example_input.json` — input contract (Q1 2026 worked example).
-- (this `SKILL.md` embeds the full `build.mjs` source at the bottom as a fallback — see "If .mjs won't load").
-
-## When to run
-At **quarter close**, after the data workers return quarterly aggregates:
-HubSpot Deals Worker → quarterly revenue series, top clients by quarter, quarterly decomposition (include
-`decomposition.starting_recurring` so NRR/GRR compute); Subscription Tracker Worker → quarter expense lines.
-Optionally `inputs.prior_q_sm_usd` (prior-quarter S&M spend) so the Magic Number computes.
-
-## Run
-```bash
-node build.mjs <input.json> <output.docx>
-# e.g. node build.mjs input.json "BlazingCDN_Quarterly_Financial_Report_Q1_2026.docx"
-```
-Requires only `node` (v18+). No `npm install`. No Python.
-
-## What differs from monthly
-- Trend bar-table and tables are by **quarter**.
-- Section B is **QoQ** (this quarter vs prior quarter) plus same-quarter-last-year.
-- Section C is the **Top 10** with This Q / Prior Q / QoQ% / Same Q LY.
-- Metrics table computes **NRR / GRR** (from `starting_recurring`), **Magic Number** (net-new ARR ÷ prior-Q S&M),
-  and frames **Rule of 40** (FCF margin stays an OpEx-only proxy until a full P&L exists).
-- ARR is the quarter-exit run-rate (exit MRR × 12).
-
-## Hub ID note
-Put the single canonical production Hub ID in `meta.source_portal` (open ambiguity 143144902 vs 145006611).
-
-## If .mjs won't load in your PaperClip (md + json only)
-The complete `build.mjs` source is reproduced verbatim below. At runtime, write it to `build.mjs` and run
-`node build.mjs input.json out.docx`. Byte-identical to the shipped `build.mjs`.
-
-<details><summary>build.mjs — full source (copy verbatim to a file, then run with node)</summary>
-
-```javascript
 #!/usr/bin/env node
 /*
  * cfo-monthly-report / build.mjs  — ZERO external dependencies (Node stdlib only).
@@ -176,53 +129,63 @@ const shortM=m=>{const[a,b]=String(m).split("-");if(!b)return m;const M=["Jan","
 
 function compute(d){
   const meta=d.meta,rev=d.revenue,exp=d.expenses,narr=d.cfo_narrative||{},fx=meta.fx_eur_usd??1.08;
-  const series=rev.quarterly_series,byQ=Object.fromEntries(series.map(q=>[q.quarter,q]));
-  const quarters=series.map(q=>q.quarter),focal=rev.focal_quarter,idx=quarters.indexOf(focal);
-  const fv=byQ[focal].revenue,fcount=byQ[focal].count;
-  const zero=series.filter(q=>q.revenue===0).map(q=>q.quarter),hasGap=zero.length>0;
+  const series=rev.monthly_series,byM=Object.fromEntries(series.map(m=>[m.month,m]));
+  const months=series.map(m=>m.month),focal=rev.focal_month,idx=months.indexOf(focal);
+  const fv=byM[focal].revenue,fcount=byM[focal].count;
+  const zero=series.filter(m=>m.revenue===0).map(m=>m.month),hasGap=zero.length>0;
 
   const flags=[];
-  for(const z of zero)flags.push(`${z} = $0 in source data — a missing batch, not a zero-revenue quarter; trailing metrics spanning it are PROVISIONAL. Action: backfill.`);
-  if(!exp.full_pl)flags.push(`Expense files are not a full P&L — SaaS tooling, ads and AI only; no CDN delivery COGS, no payroll. Rule-of-40 FCF margin is therefore an OpEx-only proxy, not GAAP.`);
-  if(meta.pre_batch)flags.push(`${meta.period_label} closes on the batch of ${meta.close_date||'the 5th'}; figures are provisional as of ${meta.date}. FX EUR→USD ${fx}.`);
+  for(const z of zero)flags.push(`${z} = $0 in source data — almost certainly a missing billing batch, not a zero-revenue month. Every trailing metric spanning it (T3M, TTM, NRR, GRR, decomposition) is PROVISIONAL. Clean single-month and YoY figures are unaffected. Action: backfill the batch (owner: data/RevOps).`);
+  if(!exp.full_pl)flags.push(`Expense files are not a full P&L — they cover SaaS tooling, ads and AI-API only; no CDN delivery COGS, no payroll. True gross/operating margin and runway cannot be computed yet. Margins below are "net of tracked OpEx," not GAAP.`);
+  if(meta.pre_batch)flags.push(`${meta.period_label} is pre-batch / provisional — formal close is ${meta.close_date||'the 5th'}; figures reflect deal data present as of ${meta.date}. FX: expenses in EUR converted at assumed EUR→USD ${fx} (confirm settlement rate).`);
   (narr.extra_integrity_flags||[]).forEach(f=>flags.push(f));
 
   let eurTot=0; const opexRows=[];
   for(const ln of exp.lines){eurTot+=ln.eur;opexRows.push([`${ln.category} (${ln.detail})`,`€${ln.eur.toLocaleString('en-US',{minimumFractionDigits:2})}`,usd(ln.eur*fx)]);}
-  const usdTot=eurTot*fx; opexRows.push({total:true,cells:["Total tracked OpEx (quarter)",`€${eurTot.toLocaleString('en-US',{minimumFractionDigits:2})}`,usd(usdTot)]});
+  const usdTot=eurTot*fx; opexRows.push({total:true,cells:["Total tracked OpEx",`€${eurTot.toLocaleString('en-US',{minimumFractionDigits:2})}`,usd(usdTot)]});
   const net=fv-usdTot, contrib=fv?net/fv:0;
 
   const rec=rev.plan_split.recurring,payg=rev.plan_split.payg,tot=rec.revenue+payg.revenue;
   const planRows=[[`Recurring / subscription-like (${rec.clients} clients)`,usd(rec.revenue),tot?pct(rec.revenue/tot):"0%"],
                   [`One-off / PAYG-like (${payg.clients} clients)`,usd(payg.revenue),tot?pct(payg.revenue/tot):"0%"]];
 
-  const priorQ=idx>0?series[idx-1].revenue:null;
-  const qoq=priorQ?{prior:priorQ,abs:fv-priorQ,pct:priorQ?(fv-priorQ)/priorQ:0}:null;
-  let yoy=null; if(idx-4>=0){const py=series[idx-4].revenue;yoy={prior:py,abs:fv-py,pct:py?(fv-py)/py:0};}
+  const[y,mn]=focal.split("-"),priorMY=`${+y-1}-${mn}`;
+  let yoy=null; if(byM[priorMY]){const pv=byM[priorMY].revenue;yoy={prior:pv,abs:fv-pv,pct:pv?(fv-pv)/pv:0};}
 
-  const exitMrr=fv/3, arrCur=exitMrr*12;
-  const complete=series.filter(q=>q.revenue>0).map(q=>q.revenue);
-  const arrSm=complete.length?(complete.slice(-2).reduce((a,b)=>a+b,0)/complete.slice(-2).length/3*12):arrCur;
+  const win=series.slice(idx-2,idx+1),pwin=series.slice(idx-5,idx-2);
+  const t3m=win.reduce((s,m)=>s+m.revenue,0),pt3m=pwin.reduce((s,m)=>s+m.revenue,0);
+  const t3mCh=pt3m?(t3m-pt3m)/pt3m:0;
+  const complete=series.filter(m=>m.revenue>0).map(m=>m.revenue);
+  const trailAvg=complete.slice(-6).reduce((a,b)=>a+b,0)/Math.max(1,complete.slice(-6).length);
+  const gapInWin=win.some(m=>m.revenue===0);
+  const t3mBf=t3m+win.filter(m=>m.revenue===0).length*trailAvg, t3mBfCh=pt3m?(t3mBf-pt3m)/pt3m:0;
+
+  const arrCur=fv*12;
+  const sm=series.slice(Math.max(0,idx-3),idx+1).filter(m=>m.revenue>0).map(m=>m.revenue);
+  const mrrSm=sm.length?sm.reduce((a,b)=>a+b,0)/sm.length:fv, arrSm=mrrSm*12;
 
   const recToolEur=exp.recurring_tool_eur??eurTot, toolUsd=recToolEur*fx, toolPct=fv?toolUsd/fv:0;
   const conc=rev.concentration;
 
   const kpis=[
-    {value:usdk(fv),label:`Quarter revenue (${focal})`,status:`ARR ≈ ${usdk(arrCur)} run-rate`,color:NAVY},
-    {value:qoq?sPct(qoq.pct):"n/a",label:"QoQ growth",status:"vs prior quarter",color:(qoq&&qoq.pct>=0)?GREEN:RED},
-    {value:yoy?sPct(yoy.pct):"n/a",label:"YoY (quarter)",status:"vs same Q last year",color:GREEN},
+    {value:usdk(fv),label:`MRR (${meta.pre_batch?'provisional':'actual'})`,status:`ARR ≈ ${usdk(arrSm)} smoothed`,color:NAVY},
+    {value:yoy?sPct(yoy.pct):"n/a",label:`Revenue YoY (${meta.period_label.split(' ')[0]})`,status:"Clean — trust",color:GREEN},
+    {value:pct(toolPct),label:"Tool spend / revenue",status:toolPct<0.05?"\u2713 Under 5% target":"\u26A0 Over 5% target",color:toolPct<0.05?GREEN:AMBER},
     {value:pct(conc.top10_share),label:"Top-10 concentration",status:conc.top10_share>0.70?"\u26A0 High risk":"OK",color:AMBER},
   ];
 
+  // top-N
+  const prevLit=idx>0?months[idx-1]:null, prevGap=prevLit?zero.includes(prevLit):false;
+  const topPrevNote=prevGap?`* Prev mo. = previous complete billed month; ${prevLit} was skipped (missing batch).`:"";
   const maxFocal=Math.max(...rev.top_clients.map(c=>c.focal));
   const topRows=rev.top_clients.map((c,i)=>{
-    const pq=c.prior_q||0; let mom,momColor,prevDisp,prevColor;
-    if(pq>0){const mv=(c.focal-pq)/pq;mom=sPct(mv);momColor=mv>=0?GREEN:RED;prevDisp=usd(pq);prevColor=null;}
+    const pm=c.prev_month||0; let mom,momColor,prevDisp,prevColor;
+    if(pm>0){const mv=(c.focal-pm)/pm;mom=sPct(mv);momColor=mv>=0?GREEN:RED;prevDisp=usd(pm);prevColor=null;}
     else{mom="\u2014";momColor=GREY;prevDisp="\u2014";prevColor=GREY;}
     return {new:!!c.new_logo,label:`${i+1}  ${c.name}${c.new_logo?'  \u2605 new':''}`,
       this:c.focal,thisDisp:usd(c.focal),frac:c.focal/maxFocal,
-      prev:prevDisp,prevColor,mom,momColor,
-      yoy:usd(c.yoy_same_q||0),yoyColor:(c.yoy_same_q||0)===0?GREY:null};
+      prev:prevDisp,prevColor,mom,momColor,t3m:usd(c.t3m),
+      yoy:usd(c.yoy_same_month||0),yoyColor:(c.yoy_same_month||0)===0?GREY:null};
   });
 
   const dc=rev.decomposition;
@@ -234,58 +197,53 @@ function compute(d){
   ];
   const netChange=dc.new.amount+dc.expansion.amount+dc.contraction.amount+dc.churn.amount;
 
-  const base=dc.starting_recurring; let nrr=null,grr=null;
-  if(base){nrr=(base+dc.expansion.amount+dc.contraction.amount+dc.churn.amount)/base;
-           grr=(base+dc.contraction.amount+dc.churn.amount)/base;}
-  const smPrior=(d.inputs||{}).prior_q_sm_usd; const netNewArr=netChange*4;
-  const magic=smPrior?netNewArr/smPrior:null;
-
   const st=(t,c,b=false)=>({t,color:c,b});
   const metrics=[
-    ["ARR (quarter-exit)",`~${usdk(arrCur)}`,"10× baseline",st("Tracking",GREY)],
-    ["Net new ARR (Q, annualized)",sUsd(netNewArr),"(10×−1)",st("Tracking",GREY)],
-    ["NRR (quarter)",nrr!=null?pct(nrr):"needs starting base","\u2265110%",nrr==null?st("Needs base",AMBER):st(nrr>=1.10?"\u2713 Pass":"\u26A0 Below",nrr>=1.10?GREEN:AMBER,true)],
-    ["GRR (quarter)",grr!=null?pct(grr):"needs starting base","\u226595%",grr==null?st("Needs base",AMBER):st(grr>=0.95?"\u2713 Pass":"\u26A0 Below",grr>=0.95?GREEN:AMBER,true)],
-    ["Magic Number",magic!=null?magic.toFixed(2):"n/a (needs prior-Q S&M)","\u22651.0",magic==null?st("Needs S&M",AMBER):st(magic>=1?"\u2713 Pass":"\u26A0 Below",magic>=1?GREEN:AMBER,true)],
-    ["Rule of 40",(yoy?sPct(yoy.pct):"?")+" growth + FCF% (proxy)","\u226540",st("Needs full P&L",AMBER)],
+    ["MRR",`${usdk(fv)} prov. / ${usdk(mrrSm)} smoothed`,"ARR/12",st("Tracking",GREY)],
+    ["ARR",`~${usdk(arrCur)} floor / ~${usdk(arrSm)} smoothed`,"10× baseline",st("Tracking",GREY)],
+    ["Net new ARR (mo)","provisional (decomposition)","(10×−1)/12",hasGap?st("Blocked — gap",RED):st("Tracking",GREY)],
+    ["NRR (T3M proxy)",(narr.nrr_text||"see decomposition")+(hasGap?"  \u26A0 distorted":""),"\u2265110%",hasGap?st("Re-run post-backfill",AMBER):st("Tracking",GREY)],
+    ["GRR (T3M proxy)",(narr.grr_text||"see decomposition")+(hasGap?"  \u26A0 distorted":""),"\u226595%",hasGap?st("Re-run post-backfill",AMBER):st("Tracking",GREY)],
     ["CAC by channel","not attributable yet","<18mo payback",st("Needs channel tags",AMBER)],
+    ["Magic Number","n/a (needs prior-Q S&M)","\u22651.0",st("Needs S&M base",AMBER)],
+    ["Rule of 40","n/a (needs FCF margin)","\u226540",st("Needs full P&L",AMBER)],
     ["Tool spend / revenue",pct(toolPct),"<5%",toolPct<0.05?st("\u2713 Pass",GREEN,true):st("\u26A0 Over",AMBER,true)],
     ["Concentration top-10",pct(conc.top10_share),"(watch)",conc.top10_share>0.70?st("\u26A0 High",AMBER,true):st("OK",GREEN,true)],
   ];
 
-  const maxSeries=Math.max(...series.map(q=>q.revenue));
-  const trend=series.map((q,i)=>{
-    const prev=i>0?series[i-1].revenue:null, mm=(prev&&prev>0)?(q.revenue-prev)/prev:null;
-    let color=NAVY; if(q.revenue===0)color=RED; else if(q.quarter===focal)color=ORANGE; else if(q.revenue===maxSeries)color=GREEN;
-    return {label:q.quarter,frac:q.revenue/maxSeries,rev:q.revenue===0?"—":usdk(q.revenue),color,
-      mom:mm==null?"—":sPct(mm),momColor:mm==null?GREY:(mm>=0?GREEN:RED)};
+  const maxSeries=Math.max(...series.map(m=>m.revenue));
+  const trend=series.map((m,i)=>{
+    const prev=i>0?series[i-1].revenue:null, mom=(prev&&prev>0)?(m.revenue-prev)/prev:null;
+    let color=NAVY; if(m.revenue===0)color=RED; else if(m.month===focal)color=ORANGE; else if(m.revenue===maxSeries)color=GREEN;
+    return {label:shortM(m.month),frac:m.revenue/maxSeries,rev:m.revenue===0?"—":usdk(m.revenue),color,
+      mom:mom==null?"—":sPct(mom),momColor:mom==null?GREY:(mom>=0?GREEN:RED)};
   });
 
   return {meta,fx,kpis,flags,bottom_line:narr.bottom_line||[],
-    A:{headline:usd(fv),sub:`${fcount} billing events  •  ${rev.unique_clients??'?'} unique paying clients (quarter)`,
-       planRows,planNote:narr.plan_note||"",
-       opexRows,netEq:`${usd(fv)} − ${usd(usdTot)} = `,netVal:usd(net),netSub:`${pct(contrib)} contribution after tracked tooling/marketing (quarter)`,
-       netCaveat:"Not a gross/operating margin — CDN delivery COGS and payroll are absent from the data room.",trend},
-    B:{yoyPre:qoq?`${usd(fv)} vs ${usd(qoq.prior)}   →   `:"",yoyVal:qoq?`${sUsd(qoq.abs)}  /  ${sPct(qoq.pct)} QoQ`:"n/a",
-       t3mRows:[[`${focal} (this quarter)`,usd(fv),""],
-                [`${quarters[idx-1]||'Prior Q'} (prior quarter)`,priorQ!=null?usd(priorQ):"n/a",qoq?{t:sPct(qoq.pct),color:qoq.pct<0?RED:GREEN}:""],
-                ...(yoy?[{total:true,cells:[`${quarters[idx-4]} (same Q last year)`,usd(yoy.prior),{t:sPct(yoy.pct),color:yoy.pct>=0?GREEN:RED}]}]:[])],
-       t3mNote:narr.qoq_note||"",
-       decompRows,decompNet:sUsd(netChange),decompMaterial:dc.material_clients??rev.top_clients.length,decompWindow:dc.window||`${focal} vs prior quarter`,
-       decompNote:narr.decomp_note||"This decomposition feeds the quarterly NRR / GRR in the metrics table."},
-    C:{topRows,topPrevNote:"",topNote:narr.top_note||"",
+    A:{headline:usd(fv),sub:`${fcount} billing events  •  ${rev.unique_clients??'?'} unique paying clients`,
+       planRows,planNote:narr.plan_note||"Recommendation: add a plan_type deal property so the split is exact, not heuristic.",
+       opexRows,netEq:`${usd(fv)} − ${usd(usdTot)} = `,netVal:usd(net),netSub:`${pct(contrib)} contribution after tracked tooling/marketing`,
+       netCaveat:"This is not a gross or operating margin — CDN delivery COGS and payroll are absent from the data room.",trend},
+    B:{yoyPre:yoy?`${usd(fv)} vs ${usd(yoy.prior)}   →   `:"",yoyVal:yoy?`${sUsd(yoy.abs)}  /  ${sPct(yoy.pct)}`:"n/a",
+       t3mRows:[[`T3M (${win.map(m=>m.month.slice(-2)+'='+usdk(m.revenue)).join(' + ')})`,usd(t3m),""],
+                ["Prior T3M",usd(pt3m),{t:sPct(t3mCh),color:t3mCh<0?RED:GREEN}],
+                ...(gapInWin?[{total:true,cells:["With backfill (≈ trailing avg)","≈"+usdk(t3mBf),{t:"≈"+sPct(t3mBfCh),color:t3mBfCh>=0?GREEN:RED}]}]:[])],
+       t3mNote:narr.t3m_note||(gapInWin?"The headline change is an artifact of the missing batch — do not act on it until the gap is loaded.":""),
+       decompRows,decompNet:sUsd(netChange),decompMaterial:dc.material_clients??rev.top_clients.length,decompWindow:dc.window||"",
+       decompNote:narr.decomp_note||"Zero churn is the real signal — no clients fully lost. Re-run after backfill for a true decomposition."},
+    C:{topRows,topPrevNote,topNote:narr.top_note||"",
        concPre:`Top-10 share ${pct(conc.top10_share)}`,concPost:`  •  Top-1 share ${pct(conc.top1_share)} (${conc.top1_name||''})`,
        conc:{top1:conc.top1_share,top2_10:conc.top10_share-conc.top1_share,rest:1-conc.top10_share,headline:pct(conc.top10_share)},
-       concReco:narr.concentration_note||"Loss of any single top account is material. Recommend a named-account QBR program and a diversification target (top-10 < 70%).",
+       concReco:narr.concentration_note||"Loss of any single top account is material. Recommend a named-account QBR/retention program for the top 10 and a diversification target (top-10 < 70% by year-end).",
        hygiene:narr.hygiene_note||""},
-    D:{arrRows:[["Quarter-exit run-rate",usd0(exitMrr),"≈"+usdk(arrCur)],{total:true,cells:["Smoothed (recent complete quarters)",usd0(arrSm/12),"≈"+usdk(arrSm)]}],
-       arrReco:narr.arr_recommendation||`Plan against ARR ≈ ${usdk(arrCur)} (quarter-exit run-rate).`,
-       pipelineNote:narr.pipeline_note||"Pipeline-to-ARR: not computable until a sales pipeline with open stages exists."},
-    E:{cacNote:narr.cac_note||"CAC by channel: not a real CAC until new-logo counts are channel-tagged and fully-loaded S&M cost is captured.",
-       toolNote:narr.toolspend_note||`Tool spend vs quarter revenue: ≈ ${pct(toolPct)} — ${toolPct<0.05?'under':'over'} the <5% target.`},
+    D:{arrRows:[["Current (provisional)",usd0(fv),"≈"+usdk(arrCur)],{total:true,cells:["Smoothed (complete months, excl. gap)",usd0(mrrSm),"≈"+usdk(arrSm)]}],
+       arrReco:narr.arr_recommendation||`Plan against ARR ≈ ${usdk(arrSm)} (smoothed working run-rate); ${usdk(arrCur)} is the conservative floor until the gap is backfilled and the month reconciled.`,
+       pipelineNote:narr.pipeline_note||"Pipeline-to-ARR conversion: not computable — \"Current Clients Pipeline\" is a single-stage customer ledger, not a funnel. Action: stand up a sales pipeline with open stages (Lead → Qualified → Proposal → Won)."},
+    E:{cacNote:narr.cac_note||"CAC by channel: only paid ad spend is attributable. Not a real CAC until new-logo counts are channel-tagged and fully-loaded S&M cost is captured.",
+       toolNote:narr.toolspend_note||`Tool spend vs revenue: recurring tooling ≈ ${usd0(toolUsd)}/mo = ${pct(toolPct)} of MRR — under the <5% target.`},
     F:{title:"Cash runway — not computable this cycle",lines:narr.runway_lines||[
-       "Missing inputs: opening cash balance and fully-loaded burn (payroll + CDN infrastructure COGS).",
-       `On tracked OpEx alone the quarter is cash-generative (${sUsd(net)}), but that excludes people and delivery infra — NOT a runway statement.`]},
+       "Missing inputs: opening cash balance (held by YODA / banking) and fully-loaded monthly burn (payroll + CDN infrastructure COGS).",
+       `On tracked OpEx alone the business is cash-generative (${sUsd(net)}), but that ignores the two largest real cost buckets (people, delivery infra) — so it is NOT a runway statement.`]},
     metrics};
 }
 
@@ -295,7 +253,7 @@ function render(M){
   // title band
   body.push(table([CW],row(cell(
     txt(M.meta.company.toUpperCase(),{b:true,color:ORANGE,sz:22,after:30})+
-    txt("Quarterly Financial Report",{b:true,color:WHITE,sz:40,after:20})+
+    txt("Monthly Financial Report",{b:true,color:WHITE,sz:40,after:20})+
     txt("Reporting period: "+M.meta.period_label,{color:"C9D4E3",sz:22}),
     {w:CW,fill:NAVY,noBorder:true,mar:{t:200,b:160,l:240,r:240}}),{cantSplit:true}),{noBorder:true}));
   body.push(txt(`Prepared by ${M.meta.prepared_by}   •   Date ${M.meta.date}   •   For: ${M.meta.for}`,{sz:16,color:GREY,before:120,after:20}));
@@ -312,7 +270,7 @@ function render(M){
   M.bottom_line.forEach((t,i)=>body.push(listItem(t,`${i+1}. `)));
   body.push(txt(" ",{after:80}));
   // A
-  body.push(h2("A.  Quarterly revenue & result — "+M.meta.period_label));
+  body.push(h2("A.  Monthly revenue & result — "+M.meta.period_label));
   body.push(para(run("Revenue: ",{b:true,sz:20})+run(M.A.headline,{b:true,color:NAVY,sz:24})+run("    "+M.A.sub,{color:GREY,sz:16}),{after:120}));
   body.push(txt("Revenue by plan type:",{b:true,sz:17,after:60}));
   body.push(dataTable([4680,2340,2340],["Plan type","Revenue","Share"],M.A.planRows));
@@ -323,21 +281,21 @@ function render(M){
     para(run(M.A.netEq,{sz:18})+run(M.A.netVal,{b:true,color:GREEN,sz:22})+run("   •   "+M.A.netSub,{sz:16,color:GREY}))+
     txt(M.A.netCaveat,{i:true,sz:15,color:GREY,before:40}),{fill:GREENBG,bar:GREEN}));
   // trend (bar table)
-  body.push(txt("Revenue trend — quarterly",{b:true,sz:18,before:120,after:40}));
+  body.push(txt("Revenue trend — monthly",{b:true,sz:18,before:120,after:40}));
   const trendRows=M.A.trend.map(t=>row(
-    cell(txt(t.label,{sz:16}),{w:1500})+
-    cell(para(blockBar(t.frac,t.color)),{w:4800})+
+    cell(txt(t.label,{sz:16}),{w:1100})+
+    cell(para(blockBar(t.frac,t.color)),{w:5200})+
     cell(txt(t.rev,{sz:16,jc:'right'}),{w:1530})+
     cell(txt(t.mom,{sz:15,jc:'right',color:t.momColor}),{w:1530})
   )).join("");
-  body.push(table([1500,4800,1530,1530],
-    row(["Quarter","","Revenue","QoQ"].map((h,i)=>cell(txt(h,{b:true,color:WHITE,sz:16}),{w:[1500,4800,1530,1530][i],fill:NAVY,borderColor:NAVY})).join(""),{header:true})+trendRows));
+  body.push(table([1100,5200,1530,1530],
+    row(["Month","","Revenue","MoM"].map((h,i)=>cell(txt(h,{b:true,color:WHITE,sz:16}),{w:[1100,5200,1530,1530][i],fill:NAVY,borderColor:NAVY})).join(""),{header:true})+trendRows));
   // B
   body.push(h2("B.  Trends & comparisons"));
-  body.push(callout("QoQ — this quarter vs prior quarter",
+  body.push(callout("YoY (month) vs same month last year  •  CLEAN, trust this",
     para(run(M.B.yoyPre,{sz:18})+run(M.B.yoyVal,{b:true,color:GREEN,sz:20})),{fill:GREENBG,bar:GREEN}));
   body.push(txt(" ",{after:80}));
-  body.push(txt("Quarter vs prior quarter (and same quarter last year):",{b:true,sz:17,after:60}));
+  body.push(txt("3-month block (T3M) vs prior T3M:",{b:true,sz:17,after:60}));
   body.push(dataTable([4680,2340,2340],["Window","Value","Change"],M.B.t3mRows));
   if(M.B.t3mNote)body.push(txt(M.B.t3mNote,{i:true,sz:15,color:GREY,before:60,after:140}));
   body.push(txt(`Growth decomposition (material clients, ${M.B.decompWindow}):`,{b:true,sz:17,after:60}));
@@ -347,15 +305,16 @@ function render(M){
   if(M.B.decompNote)body.push(txt(M.B.decompNote,{i:true,sz:15,color:GREY,before:60,after:120}));
   // C
   body.push(h2("C.  Customers — Top "+M.C.topRows.length));
-  const cCols=[2740,1620,1500,900,2600];
-  const cHead=row(["Client","This Q","Prior Q","QoQ","Same Q LY"].map((h,i)=>cell(txt(h,{b:true,color:WHITE,sz:18}),{w:cCols[i],fill:NAVY,borderColor:NAVY})).join(""),{header:true});
+  const cCols=[2520,1500,1320,820,1500,1700];
+  const cHead=row(["Client","This mo","Prev mo*","MoM","T3M","Same mo LY"].map((h,i)=>cell(txt(h,{b:true,color:WHITE,sz:18}),{w:cCols[i],fill:NAVY,borderColor:NAVY})).join(""),{header:true});
   const cBody=M.C.topRows.map((r,ri)=>{const fill=ri%2?WHITE:LIGHT;
     return row(
       cell(txt(r.label,{sz:17,color:r.new?ORANGE:undefined}),{w:cCols[0],fill})+
       cell(para(run(r.thisDisp+" ",{sz:16,jc:'right'})+blockBar(r.frac,r.new?ORANGE:NAVY,6),{jc:'right'}),{w:cCols[1],fill})+
       cell(txt(r.prev,{sz:16,jc:'right',color:r.prevColor}),{w:cCols[2],fill})+
       cell(txt(r.mom,{sz:16,jc:'right',color:r.momColor}),{w:cCols[3],fill})+
-      cell(txt(r.yoy,{sz:16,jc:'right',color:r.yoyColor}),{w:cCols[4],fill})
+      cell(txt(r.t3m,{sz:16,jc:'right'}),{w:cCols[4],fill})+
+      cell(txt(r.yoy,{sz:16,jc:'right',color:r.yoyColor}),{w:cCols[5],fill})
     );}).join("");
   body.push(table(cCols,cHead+cBody));
   if(M.C.topPrevNote)body.push(txt(M.C.topPrevNote,{i:true,sz:14,color:GREY,before:50}));
@@ -372,7 +331,7 @@ function render(M){
   if(M.C.hygiene)body.push(txt(M.C.hygiene,{i:true,sz:14,color:GREY,before:60,after:80}));
   // D
   body.push(h2("D.  Run-rate & forward"));
-  body.push(txt("ARR snapshot (quarter-exit MRR × 12):",{b:true,sz:17,after:60}));
+  body.push(txt("ARR snapshot (recurring book, so MRR ≈ monthly revenue):",{b:true,sz:17,after:60}));
   body.push(dataTable([5560,1900,1900],["Basis","MRR","ARR"],M.D.arrRows));
   body.push(txt(M.D.arrReco,{sz:16,before:60,after:60}));
   body.push(listItem(M.D.pipelineNote,"•  "));
@@ -395,7 +354,7 @@ function render(M){
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body.join("")}${sectPr}</w:body></w:document>`;
 
   const footer=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="4" w:space="6" w:color="D9DEE4"/></w:pBdr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t xml:space="preserve">${esc(M.meta.company)} — Quarterly Financial Report — ${esc(M.meta.period_label)}   •   Confidential   •   Page </w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>`;
+<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="4" w:space="6" w:color="D9DEE4"/></w:pBdr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t xml:space="preserve">${esc(M.meta.company)} — Monthly Financial Report — ${esc(M.meta.period_label)}   •   Confidential   •   Page </w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>`;
 
   const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="16365C"/><w:sz w:val="26"/></w:rPr></w:style></w:styles>`;
@@ -422,6 +381,3 @@ const inp=process.argv[2]||'input.json', out=process.argv[3]||'Monthly_Financial
 const data=JSON.parse(fs.readFileSync(inp,'utf8'));
 fs.writeFileSync(out, render(compute(data)));
 console.log('✓ wrote', out);
-```
-
-</details>
