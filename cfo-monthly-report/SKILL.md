@@ -6,7 +6,7 @@ description: "Generate the polished BlazingCDN MONTHLY financial report as a for
 # CFO Monthly Financial Report
 
 Deterministic render: same code → identical design every month. Only the numbers in `input.json` change.
-The layout is frozen in `scripts/build.js`; do not re-derive it. `assets/template_reference.docx` is a visual
+The layout is frozen in `build.js`; do not re-derive it. `template_reference.docx` is a visual
 reference only — it is not the mechanism.
 
 ## When to run
@@ -40,12 +40,12 @@ Requires `matplotlib` (python) and `docx` (node) — both present in the agent e
 - This skill loads only for monthly reports; quarterly logic lives in a separate skill so it never bloats context.
 
 ## Files
-- `scripts/compute.py` — metric math + formatting + integrity-flag detection → computed.json
-- `scripts/charts.py` — 3 charts from computed.json
-- `scripts/build.js` — Word renderer (frozen layout)
-- `scripts/make_report.py` — orchestrator + validation
-- `schema/example_input.json` — the input contract (May 2026 worked example)
-- `assets/template_reference.docx` — visual reference only
+- `/compute.py` — metric math + formatting + integrity-flag detection → computed.json
+- `/charts.py` — 3 charts from computed.json
+- `/build.js` — Word renderer (frozen layout)
+- `/make_report.py` — orchestrator + validation
+- `/example_input.json` — the input contract (May 2026 worked example)
+- `/template_reference.docx` — visual reference only
 
 ## Section C — Top 20 customers
 The customer table lists the **top 20 clients** with four comparisons per client so new logos and patterns
