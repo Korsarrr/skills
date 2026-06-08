@@ -20,7 +20,7 @@ cells inside the Word file, so nothing needs to be installed.
    integrity-flag detection, metric statuses) is done by the engine.
 3. **Run:** `node build.mjs input.json "BlazingCDN_Monthly_Financial_Report_<Month_Year>.docx"` (needs only `node`
    v18+; no `npm install`).
-4. Review, save to Google Drive "CFO", post the link to Hermes.
+4. Review, save to Google Drive "CFO".
 
 ## Section C — Top 20 customers
 Top-20 table with four comparisons per client so new logos and patterns pop:
