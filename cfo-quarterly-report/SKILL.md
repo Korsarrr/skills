@@ -26,19 +26,34 @@ quarterly logic never loads on a monthly run. Deterministic: same engine → ide
 - Metrics compute **NRR / GRR** (from `starting_recurring`), **Magic Number** (net-new ARR ÷ prior-Q S&M), and
   frame **Rule of 40** (FCF margin stays an OpEx-only proxy until a full P&L exists). ARR = quarter-exit MRR × 12.
 
+## Design behaviour (automatic)
+- **Signed deltas carry arrows:** positive → green ▲, negative → red ▼, exact zero → neutral (no arrow). Applied
+  to KPI QoQ/YoY, per-client QoQ, trend QoQ, the comparison-table Change column, growth-decomposition amounts,
+  and net-new ARR. The Rule-of-40 growth value and Section F narrative prose are left arrow-free on purpose.
+- **Footer shows `Page X of Y`** (PAGE / NUMPAGES fields).
+- The full visual spec lives in the engine — see the DESIGN INVARIANTS comment at the top of `build.mjs` (palette,
+  image-free, deterministic). House style is identical to `cfo-monthly-report`; there is no separate spec doc to drift.
+
 ## NOTE — production Hub ID
-Put the single canonical production Hub ID in `meta.source_portal` (open ambiguity 143144902 vs 145006611).
+Canonical production Hub ID is **143144902**, already baked into `meta.source_portal` in the example below (the prior
+`143144902` vs `145006611` ambiguity is resolved — `145006611` was the non-production portal). Confirm it still matches
+your live portal before each run; change the single value in `meta.source_portal` if the portal ever moves.
 
 ## Engine — build.mjs  (copy verbatim into a file named build.mjs)
 
 ```javascript
 #!/usr/bin/env node
 /*
- * cfo-monthly-report / build.mjs  — ZERO external dependencies (Node stdlib only).
+ * cfo-quarterly-report / build.mjs  — ZERO external dependencies (Node stdlib only).
  * No npm packages, no Python. Writes a valid .docx via raw OOXML + a hand-built ZIP.
  *   node build.mjs <input.json> <output.docx>
  * Does both compute (metrics) and render. Charts are drawn with shaded/block-bar cells
  * (no images), so nothing extra is required at runtime.
+ *
+ * DESIGN INVARIANTS (the look lives here, in code — not in a separate spec doc):
+ *   palette : NAVY 16365C (primary) · ORANGE E8590C (accent) · GREEN 2E7D32 / RED C62828 (deltas)
+ *   rules   : image-free · deterministic (same engine -> identical design each quarter) · stdlib-only
+ *   deltas  : green up-triangle for positive, red down-triangle for negative, zero = neutral (no arrow)
  */
 import fs from 'node:fs';
 
@@ -159,6 +174,9 @@ const usdk=x=>`$${(x/1000).toFixed(1)}K`;
 const pct=x=>`${(x*100).toFixed(1)}%`;
 const sUsd=x=>(x>=0?"+":"\u2212")+`$${Math.abs(x).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const sPct=x=>(x>=0?"+":"\u2212")+`${Math.abs(x*100).toFixed(1)}%`;
+const arrow=x=>x>0?"\u25B2 ":(x<0?"\u25BC ":"");           // ▲ pos / ▼ neg / "" zero
+const dUsd=x=>arrow(x)+sUsd(x);                            // delta $ with arrow
+const dPct=x=>arrow(x)+sPct(x);                            // delta % with arrow
 const shortM=m=>{const[a,b]=String(m).split("-");if(!b)return m;const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];return `${M[+b-1]}'${a.slice(2)}`;};
 
 function compute(d){
@@ -196,15 +214,15 @@ function compute(d){
 
   const kpis=[
     {value:usdk(fv),label:`Quarter revenue (${focal})`,status:`ARR ≈ ${usdk(arrCur)} run-rate`,color:NAVY},
-    {value:qoq?sPct(qoq.pct):"n/a",label:"QoQ growth",status:"vs prior quarter",color:(qoq&&qoq.pct>=0)?GREEN:RED},
-    {value:yoy?sPct(yoy.pct):"n/a",label:"YoY (quarter)",status:"vs same Q last year",color:GREEN},
+    {value:qoq?dPct(qoq.pct):"n/a",label:"QoQ growth",status:"vs prior quarter",color:(qoq&&qoq.pct>=0)?GREEN:RED},
+    {value:yoy?dPct(yoy.pct):"n/a",label:"YoY (quarter)",status:"vs same Q last year",color:GREEN},
     {value:pct(conc.top10_share),label:"Top-10 concentration",status:conc.top10_share>0.70?"\u26A0 High risk":"OK",color:AMBER},
   ];
 
   const maxFocal=Math.max(...rev.top_clients.map(c=>c.focal));
   const topRows=rev.top_clients.map((c,i)=>{
     const pq=c.prior_q||0; let mom,momColor,prevDisp,prevColor;
-    if(pq>0){const mv=(c.focal-pq)/pq;mom=sPct(mv);momColor=mv>=0?GREEN:RED;prevDisp=usd(pq);prevColor=null;}
+    if(pq>0){const mv=(c.focal-pq)/pq;mom=dPct(mv);momColor=mv>=0?GREEN:RED;prevDisp=usd(pq);prevColor=null;}
     else{mom="\u2014";momColor=GREY;prevDisp="\u2014";prevColor=GREY;}
     return {new:!!c.new_logo,label:`${i+1}  ${c.name}${c.new_logo?'  \u2605 new':''}`,
       this:c.focal,thisDisp:usd(c.focal),frac:c.focal/maxFocal,
@@ -214,10 +232,10 @@ function compute(d){
 
   const dc=rev.decomposition;
   const decompRows=[
-    {label:"New",color:GREEN,amt:sUsd(dc.new.amount),n:dc.new.clients},
-    {label:"Expansion",color:GREEN,amt:sUsd(dc.expansion.amount),n:dc.expansion.clients},
-    {label:"Contraction",color:RED,amt:sUsd(dc.contraction.amount),n:dc.contraction.clients},
-    {label:"Churn (full logo loss)",color:dc.churn.clients===0?GREEN:RED,amt:sUsd(dc.churn.amount),n:dc.churn.clients},
+    {label:"New",color:GREEN,amt:dUsd(dc.new.amount),n:dc.new.clients},
+    {label:"Expansion",color:GREEN,amt:dUsd(dc.expansion.amount),n:dc.expansion.clients},
+    {label:"Contraction",color:RED,amt:dUsd(dc.contraction.amount),n:dc.contraction.clients},
+    {label:"Churn (full logo loss)",color:dc.churn.clients===0?GREEN:RED,amt:dUsd(dc.churn.amount),n:dc.churn.clients},
   ];
   const netChange=dc.new.amount+dc.expansion.amount+dc.contraction.amount+dc.churn.amount;
 
@@ -230,7 +248,7 @@ function compute(d){
   const st=(t,c,b=false)=>({t,color:c,b});
   const metrics=[
     ["ARR (quarter-exit)",`~${usdk(arrCur)}`,"10× baseline",st("Tracking",GREY)],
-    ["Net new ARR (Q, annualized)",sUsd(netNewArr),"(10×−1)",st("Tracking",GREY)],
+    ["Net new ARR (Q, annualized)",dUsd(netNewArr),"(10×−1)",st("Tracking",GREY)],
     ["NRR (quarter)",nrr!=null?pct(nrr):"needs starting base","\u2265110%",nrr==null?st("Needs base",AMBER):st(nrr>=1.10?"\u2713 Pass":"\u26A0 Below",nrr>=1.10?GREEN:AMBER,true)],
     ["GRR (quarter)",grr!=null?pct(grr):"needs starting base","\u226595%",grr==null?st("Needs base",AMBER):st(grr>=0.95?"\u2713 Pass":"\u26A0 Below",grr>=0.95?GREEN:AMBER,true)],
     ["Magic Number",magic!=null?magic.toFixed(2):"n/a (needs prior-Q S&M)","\u22651.0",magic==null?st("Needs S&M",AMBER):st(magic>=1?"\u2713 Pass":"\u26A0 Below",magic>=1?GREEN:AMBER,true)],
@@ -245,7 +263,7 @@ function compute(d){
     const prev=i>0?series[i-1].revenue:null, mm=(prev&&prev>0)?(q.revenue-prev)/prev:null;
     let color=NAVY; if(q.revenue===0)color=RED; else if(q.quarter===focal)color=ORANGE; else if(q.revenue===maxSeries)color=GREEN;
     return {label:q.quarter,frac:q.revenue/maxSeries,rev:q.revenue===0?"—":usdk(q.revenue),color,
-      mom:mm==null?"—":sPct(mm),momColor:mm==null?GREY:(mm>=0?GREEN:RED)};
+      mom:mm==null?"—":dPct(mm),momColor:mm==null?GREY:(mm>=0?GREEN:RED)};
   });
 
   return {meta,fx,kpis,flags,bottom_line:narr.bottom_line||[],
@@ -253,12 +271,12 @@ function compute(d){
        planRows,planNote:narr.plan_note||"",
        opexRows,netEq:`${usd(fv)} − ${usd(usdTot)} = `,netVal:usd(net),netSub:`${pct(contrib)} contribution after tracked tooling/marketing (quarter)`,
        netCaveat:"Not a gross/operating margin — CDN delivery COGS and payroll are absent from the data room.",trend},
-    B:{yoyPre:qoq?`${usd(fv)} vs ${usd(qoq.prior)}   →   `:"",yoyVal:qoq?`${sUsd(qoq.abs)}  /  ${sPct(qoq.pct)} QoQ`:"n/a",
+    B:{yoyPre:qoq?`${usd(fv)} vs ${usd(qoq.prior)}   →   `:"",yoyVal:qoq?`${sUsd(qoq.abs)}  /  ${dPct(qoq.pct)} QoQ`:"n/a",
        t3mRows:[[`${focal} (this quarter)`,usd(fv),""],
-                [`${quarters[idx-1]||'Prior Q'} (prior quarter)`,priorQ!=null?usd(priorQ):"n/a",qoq?{t:sPct(qoq.pct),color:qoq.pct<0?RED:GREEN}:""],
-                ...(yoy?[{total:true,cells:[`${quarters[idx-4]} (same Q last year)`,usd(yoy.prior),{t:sPct(yoy.pct),color:yoy.pct>=0?GREEN:RED}]}]:[])],
+                [`${quarters[idx-1]||'Prior Q'} (prior quarter)`,priorQ!=null?usd(priorQ):"n/a",qoq?{t:dPct(qoq.pct),color:qoq.pct<0?RED:GREEN}:""],
+                ...(yoy?[{total:true,cells:[`${quarters[idx-4]} (same Q last year)`,usd(yoy.prior),{t:dPct(yoy.pct),color:yoy.pct>=0?GREEN:RED}]}]:[])],
        t3mNote:narr.qoq_note||"",
-       decompRows,decompNet:sUsd(netChange),decompMaterial:dc.material_clients??rev.top_clients.length,decompWindow:dc.window||`${focal} vs prior quarter`,
+       decompRows,decompNet:dUsd(netChange),decompMaterial:dc.material_clients??rev.top_clients.length,decompWindow:dc.window||`${focal} vs prior quarter`,
        decompNote:narr.decomp_note||"This decomposition feeds the quarterly NRR / GRR in the metrics table."},
     C:{topRows,topPrevNote:"",topNote:narr.top_note||"",
        concPre:`Top-10 share ${pct(conc.top10_share)}`,concPost:`  •  Top-1 share ${pct(conc.top1_share)} (${conc.top1_name||''})`,
@@ -334,7 +352,7 @@ function render(M){
   if(M.B.decompNote)body.push(txt(M.B.decompNote,{i:true,sz:15,color:GREY,before:60,after:120}));
   // C
   body.push(h2("C.  Customers — Top "+M.C.topRows.length));
-  const cCols=[2740,1620,1500,900,2600];
+  const cCols=[2740,1620,1500,1100,2400];
   const cHead=row(["Client","This Q","Prior Q","QoQ","Same Q LY"].map((h,i)=>cell(txt(h,{b:true,color:WHITE,sz:18}),{w:cCols[i],fill:NAVY,borderColor:NAVY})).join(""),{header:true});
   const cBody=M.C.topRows.map((r,ri)=>{const fill=ri%2?WHITE:LIGHT;
     return row(
@@ -382,7 +400,7 @@ function render(M){
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body.join("")}${sectPr}</w:body></w:document>`;
 
   const footer=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="4" w:space="6" w:color="D9DEE4"/></w:pBdr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t xml:space="preserve">${esc(M.meta.company)} — Quarterly Financial Report — ${esc(M.meta.period_label)}   •   Confidential   •   Page </w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>`;
+<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="4" w:space="6" w:color="D9DEE4"/></w:pBdr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t xml:space="preserve">${esc(M.meta.company)} — Quarterly Financial Report — ${esc(M.meta.period_label)}   •   Confidential   •   Page </w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t xml:space="preserve"> of </w:t></w:r><w:fldSimple w:instr=" NUMPAGES "><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>`;
 
   const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="16365C"/><w:sz w:val="26"/></w:rPr></w:style></w:styles>`;
@@ -405,7 +423,7 @@ function render(M){
 }
 
 /* ============================ main ============================ */
-const inp=process.argv[2]||'input.json', out=process.argv[3]||'Monthly_Financial_Report.docx';
+const inp=process.argv[2]||'input.json', out=process.argv[3]||'Quarterly_Financial_Report.docx';
 const data=JSON.parse(fs.readFileSync(inp,'utf8'));
 fs.writeFileSync(out, render(compute(data)));
 console.log('✓ wrote', out);
@@ -419,7 +437,7 @@ console.log('✓ wrote', out);
     "company":"BlazingCDN","report_type":"quarterly","period_label":"Q1 2026","period":"2026-Q1",
     "prepared_by":"Mike Scarpelli, CFO","date":"2026-04-05",
     "for":"Hermes (Chief of Staff) \u2192 CEO",
-    "source_portal":"HubSpot production portal (Hub <CONFIRM_PROD_HUB_ID>), Deals \u2192 \"Current Clients Pipeline\". Expenses: Google Drive \"CFO\"",
+    "source_portal":"HubSpot production portal (Hub 143144902), Deals \u2192 \"Current Clients Pipeline\". Expenses: Google Drive \"CFO\"",
     "fx_eur_usd":1.08,"currency":"USD","pre_batch":false
   },
   "inputs": { "prior_q_sm_usd": 3500 },
