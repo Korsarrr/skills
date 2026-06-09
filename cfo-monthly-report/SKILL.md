@@ -1,5 +1,5 @@
 ---
-name: cfo-monthly-financial-report
+name: cfo-monthly-report
 description: "Generate BlazingCDN's monthly CFO financial report as a polished, Google-Docs-clean .docx via docx-js. Use whenever the monthly CFO report is requested or scheduled. The engine does both the compute (ARR/MRR, YoY, T3M + backfill, decomposition, concentration, integrity flags, metric statuses) and the rendering; you supply only input.json (HubSpot Deals Worker revenue + Subscription Tracker Worker expenses + cfo_narrative judgement). Deterministic: same engine -> identical design every month; only the numbers change."
 ---
 
