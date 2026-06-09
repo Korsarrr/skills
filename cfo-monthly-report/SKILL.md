@@ -1,18 +1,24 @@
 ---
-name: cfo-monthly-report
-description: "Generate the polished BlazingCDN MONTHLY financial report as a formatted Word (.docx): title band, KPI cards, data-integrity callouts, formatted tables with status colors, a monthly revenue trend bar-table, a Top-20 customers table with This-mo / Prev-mo / MoM% / T3M / Same-month-LY comparisons, and a Top-10 concentration bar. This skill is a single self-contained markdown file: it embeds a zero-dependency Node ESM engine (no npm, no Python, no images) plus the input contract. Use on the 5th-of-month cycle once the HubSpot Deals Worker (revenue JSON) and Subscription Tracker Worker (expense JSON) have returned data and the CFO has assembled the input. Do NOT use for quarterly reports (use cfo-quarterly-report)."
+name: cfo-monthly-financial-report
+description: "Generate BlazingCDN's monthly CFO financial report as a polished, Google-Docs-clean .docx via docx-js. Use whenever the monthly CFO report is requested or scheduled. The engine does both the compute (ARR/MRR, YoY, T3M + backfill, decomposition, concentration, integrity flags, metric statuses) and the rendering; you supply only input.json (HubSpot Deals Worker revenue + Subscription Tracker Worker expenses + cfo_narrative judgement). Deterministic: same engine -> identical design every month; only the numbers change."
 ---
 
 # CFO Monthly Financial Report (single-file .md skill)
 
-Everything needed is inside THIS markdown file: a zero-dependency render engine (Node standard library only — no `docx` npm, no matplotlib, no Python, no images, no network) and the input contract. Deterministic: same engine → identical design every month; only the numbers change. Charts are drawn as shaded / ▆block-bar table cells inside the Word file, so nothing needs to be installed.
+This skill builds BlazingCDN's monthly CFO report as a polished `.docx` using **docx-js** (the `docx` skill's library). The engine does both the math and the rendering. Charts are drawn as shaded / block-bar (`█`/`░`) table cells — no images — so the file stays light and imports cleanly into Google Docs. Deterministic: same engine → identical design every month; only the numbers change.
+
+The output follows the `docx` skill's Google-Docs-safe rules (DXA widths, `ShadingType.CLEAR`, dual-width tables, numbering-config lists, no table-rule dividers, `PageNumber` footer fields), so it opens/converts to a native Google Doc without the artefacts of hand-rolled OOXML.
+
+> **Dependency note (changed from the old engine):** this is no longer a zero-dependency stdlib engine. It depends on the `docx` npm package and — optionally — the `docx` skill's `validate.py`. That is the deliberate trade for clean Google Docs output.
 
 ## How to produce a report (runtime steps)
 
-1. **Materialize the engine.** Copy the entire `build.mjs` code block (under "Engine" below) verbatim into a file named `build.mjs` in your workspace.
-2. **Assemble the input.** Build `input.json` from the two data workers' JSON results + your own `cfo_narrative` (`bottom_line`, notes). Use the "Example input" block below as the exact contract. Revenue numbers come from the HubSpot Deals Worker; expense lines from the Subscription Tracker Worker. You write only judgement — all math (ARR/MRR, YoY, T3M + backfill, net result, margins, tool-spend %, per-client MoM, concentration, integrity-flag detection, metric statuses) is done by the engine.
-3. **Run:** `node build.mjs input.json "BlazingCDN_Monthly_Financial_Report_<Month_Year>.docx"` (needs only node v18+; no `npm install`).
-4. **Review, save** to Google Drive "CFO".
+1. **Materialize the engine.** Copy the entire `build.js` code block (under "Engine" below) verbatim into a file named `build.js` in your workspace.
+2. **Install docx once.** In that folder run `npm install docx` (Node v18+). No other packages are needed.
+3. **Assemble the input.** Build `input.json` from the two data workers' JSON results + your own `cfo_narrative` (`bottom_line`, notes). Use the "Example input" block below as the exact contract. Revenue numbers come from the **HubSpot Deals Worker**; expense lines from the **Subscription Tracker Worker**. You write only judgement — all math (ARR/MRR, YoY, T3M + backfill, net result, margins, tool-spend %, per-client MoM, concentration, integrity-flag detection, metric statuses) is done by the engine.
+4. **Run:** `node build.js input.json "BlazingCDN_Monthly_Financial_Report_<Month_Year>.docx"`.
+5. **Validate (optional but recommended):** `python <docx-skill>/scripts/office/validate.py "<output>.docx"`. If it fails, unpack → fix XML → repack per the `docx` skill.
+6. **Review, save to Google Drive "CFO".** Because the `.docx` is Google-Docs-clean, you can also upload it to Drive **with conversion** (`mimeType: application/vnd.google-apps.document`) to land a native Google Doc; the `PageNumber` footer is the only element that may degrade on conversion.
 
 ## Section C — Top 20 customers
 
@@ -20,158 +26,64 @@ Top-20 table with comparisons per client so new logos and patterns pop: This mo 
 
 ## Integrity behaviour (automatic)
 
-- Any $0 month in the series is auto-flagged as a probable missing batch; trailing metrics spanning it are PROVISIONAL.
+- Any `$0` month in the series is auto-flagged as a probable missing batch; trailing metrics spanning it are **PROVISIONAL**.
 - If `expenses.full_pl` is false, margins are labelled "net of tracked OpEx," not GAAP.
 - If `meta.pre_batch` is true, the report is labelled provisional with the close date.
 
 ## Design behaviour (automatic)
 
-- **Signed deltas carry arrows:** positive → green ▲, negative → red ▼, exact zero → neutral (no arrow). Applied to KPI YoY, per-client MoM, trend MoM, T3M change, and growth-decomposition amounts. Narrative prose (e.g. the cash-generative figure in Section F) is left arrow-free on purpose.
-- **Footer shows `Page X of Y`** (PAGE / NUMPAGES fields).
-- The full visual spec lives in the engine itself — see the DESIGN INVARIANTS comment at the top of `build.mjs` (palette, image-free, deterministic). There is intentionally no separate design-spec document to drift out of sync.
+- Signed deltas carry arrows: positive → green ▲, negative → red ▼, exact zero → neutral (no arrow). Applied to KPI YoY, per-client MoM, trend MoM, T3M change, and growth-decomposition amounts. Narrative prose (e.g. the cash-generative figure in Section F) is left arrow-free on purpose.
+- Footer shows **Page X of Y** via docx-js `PageNumber.CURRENT` / `PageNumber.TOTAL_PAGES` fields.
+- The full visual spec lives in the engine itself — see the `DESIGN INVARIANTS` comment and the palette constants at the top of `build.js` (NAVY / ORANGE / GREEN / RED, image-free, deterministic). There is intentionally no separate design-spec document to drift out of sync.
 
 ## NOTE — production Hub ID
 
-Canonical production Hub ID is **143144902** and is already baked into `meta.source_portal` in the example below (the prior `143144902` vs `145006611` ambiguity is resolved — `145006611` was the non-production portal). Confirm it still matches your live portal before each run; change the single value in `meta.source_portal` if the portal ever moves.
+Canonical production Hub ID is **143144902** and is baked into `meta.source_portal` in the example below (the prior 143144902 vs 145006611 ambiguity is resolved — 145006611 was the non-production portal). Confirm it still matches your live portal before each run; change the single value in `meta.source_portal` if the portal ever moves.
 
-## Engine — `build.mjs` (copy verbatim into a file named `build.mjs`)
+## Engine — build.js (copy verbatim into a file named build.js)
 
-```js
+```javascript
 #!/usr/bin/env node
 /*
- * cfo-monthly-report / build.mjs  — ZERO external dependencies (Node stdlib only).
- * No npm packages, no Python. Writes a valid .docx via raw OOXML + a hand-built ZIP.
- *   node build.mjs <input.json> <output.docx>
- * Does both compute (metrics) and render. Charts are drawn with shaded/block-bar cells
- * (no images), so nothing extra is required at runtime.
+ * cfo-monthly-report / build.js  — renders via docx-js (the `docx` skill).
+ * Replaces the hand-rolled OOXML engine. Output is a clean, validated .docx that
+ * imports into Google Docs without the artefacts of raw field codes / fixed OOXML.
  *
- * DESIGN INVARIANTS (the look lives here, in code — not in a separate spec doc):
+ *   npm install docx          (once, in this folder)
+ *   node build.js <input.json> <output.docx>
+ *
+ * Same input.json CONTRACT as before — only rendering changed. All math
+ * (ARR/MRR, YoY, T3M + backfill, decomposition, concentration, integrity flags,
+ * metric statuses) is still done here in compute(); you write only judgement.
+ *
+ * DESIGN INVARIANTS (unchanged):
  *   palette : NAVY 16365C (primary) · ORANGE E8590C (accent) · GREEN 2E7D32 / RED C62828 (deltas)
- *   rules   : image-free · deterministic (same engine -> identical design each month) · stdlib-only
- *   deltas  : green up-triangle for positive, red down-triangle for negative, zero = neutral (no arrow)
+ *   deltas  : green up-triangle positive, red down-triangle negative, zero = neutral (no arrow)
+ *   charts  : drawn as shaded / block-bar table cells (no images) — survives Google Docs import
+ *   footer  : "Page X of Y" via PageNumber fields (docx-js) — preserved
  */
-import fs from 'node:fs';
-
-/* ============================ ZIP (STORE) + CRC32 ============================ */
-const CRCT=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
-const crc32=b=>{let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=CRCT[(c^b[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;};
-function zip(files){
-  const out=[],cen=[];let off=0;
-  for(const f of files){
-    const name=Buffer.from(f.name,'utf8'),data=f.data,crc=crc32(data);
-    const lh=Buffer.alloc(30);lh.writeUInt32LE(0x04034b50,0);lh.writeUInt16LE(20,4);
-    lh.writeUInt32LE(crc,14);lh.writeUInt32LE(data.length,18);lh.writeUInt32LE(data.length,22);
-    lh.writeUInt16LE(name.length,26);out.push(lh,name,data);
-    const ch=Buffer.alloc(46);ch.writeUInt32LE(0x02014b50,0);ch.writeUInt16LE(20,4);ch.writeUInt16LE(20,6);
-    ch.writeUInt32LE(crc,16);ch.writeUInt32LE(data.length,20);ch.writeUInt32LE(data.length,24);
-    ch.writeUInt16LE(name.length,28);ch.writeUInt32LE(off,42);cen.push(ch,name);
-    off+=lh.length+name.length+data.length;
-  }
-  let cdSize=0;for(const c of cen)cdSize+=c.length;
-  const end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50,0);end.writeUInt16LE(files.length,8);
-  end.writeUInt16LE(files.length,10);end.writeUInt32LE(cdSize,12);end.writeUInt32LE(off,16);
-  return Buffer.concat([...out,...cen,end]);
-}
-const Bx=s=>Buffer.from(s,'utf8');
+const fs = require('node:fs');
+const {
+  Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+  Header, Footer, AlignmentType, LevelFormat, BorderStyle, WidthType,
+  ShadingType, VerticalAlign, PageNumber
+} = require('docx');
 
 /* ============================ palette ============================ */
 const NAVY="16365C",ORANGE="E8590C",GREEN="2E7D32",AMBER="B26A00",RED="C62828",GREY="6B7280",
   LIGHT="EEF2F6",AMBERBG="FCF3E2",GREENBG="E9F3EA",GREYBG="F1F2F4",WHITE="FFFFFF",TRACK="DCE2E8";
 const CW=9360;
 
-/* ============================ OOXML helpers ============================ */
-const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-function run(text,o={}){
-  let r="<w:rPr>";
-  if(o.b)r+="<w:b/>"; if(o.i)r+="<w:i/>";
-  if(o.color)r+=`<w:color w:val="${o.color}"/>`;
-  if(o.sz)r+=`<w:sz w:val="${o.sz}"/><w:szCs w:val="${o.sz}"/>`;
-  r+="</w:rPr>";
-  return `<w:r>${r}<w:t xml:space="preserve">${esc(text)}</w:t></w:r>`;
-}
-function para(inner,o={}){
-  let p="<w:pPr>";
-  if(o.style)p+=`<w:pStyle w:val="${o.style}"/>`;
-  if(o.keepNext)p+="<w:keepNext/>";
-  if(o.bdrBottom)p+=`<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="2" w:color="${o.bdrBottom}"/></w:pBdr>`;
-  if(o.before!=null||o.after!=null)p+=`<w:spacing${o.before!=null?` w:before="${o.before}"`:''}${o.after!=null?` w:after="${o.after}"`:''}/>`;
-  if(o.ind)p+=`<w:ind w:left="${o.ind.left||0}"${o.ind.hanging?` w:hanging="${o.ind.hanging}"`:''}/>`;
-  if(o.jc)p+=`<w:jc w:val="${o.jc}"/>`;
-  p+="</w:pPr>";
-  return `<w:p>${p}${inner}</w:p>`;
-}
-const txt=(text,o={})=>para(run(text,o),o);
-function pageBreak(){return `<w:p><w:r><w:br w:type="page"/></w:r></w:p>`;}
-
-function tcBorders(c="CCCCCC",leftBar){
-  const e=(s,col)=>`<w:${s} w:val="single" w:sz="${s==='left'&&leftBar?18:4}" w:space="0" w:color="${s==='left'&&leftBar?leftBar:col}"/>`;
-  return `<w:tcBorders>${e('top',c)}${e('left',c)}${e('bottom',c)}${e('right',c)}</w:tcBorders>`;
-}
-function cell(inner,o={}){
-  let pr=`<w:tcPr><w:tcW w:w="${o.w||0}" w:type="dxa"/>`;
-  if(o.noBorder)pr+=`<w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders>`;
-  else pr+=tcBorders(o.borderColor||"CCCCCC",o.leftBar);
-  if(o.fill)pr+=`<w:shd w:val="clear" w:color="auto" w:fill="${o.fill}"/>`;
-  const m=o.mar||{t:60,b:60,l:120,r:120};
-  pr+=`<w:tcMar><w:top w:w="${m.t}" w:type="dxa"/><w:left w:w="${m.l}" w:type="dxa"/><w:bottom w:w="${m.b}" w:type="dxa"/><w:right w:w="${m.r}" w:type="dxa"/></w:tcMar>`;
-  pr+=`<w:vAlign w:val="${o.valign||'center'}"/></w:tcPr>`;
-  return `<w:tc>${pr}${inner}</w:tc>`;
-}
-function row(cells,o={}){
-  let pr='';
-  if(o.cantSplit!==false)pr+='<w:cantSplit/>';
-  if(o.header)pr+='<w:tblHeader/>';
-  return `<w:tr><w:trPr>${pr}</w:trPr>${cells}</w:tr>`;
-}
-function table(cols,rows,o={}){
-  const grid=cols.map(w=>`<w:gridCol w:w="${w}"/>`).join("");
-  const borders=o.noBorder?`<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>`:"";
-  return `<w:tbl><w:tblPr><w:tblW w:w="${o.w||CW}" w:type="dxa"/>${borders}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`;
-}
-
-/* convenience builders */
-function dataTable(cols,headers,rows){
-  const head=row(headers.map((h,i)=>cell(txt(h,{b:true,color:WHITE,sz:18}),{w:cols[i],fill:NAVY,borderColor:NAVY})).join(""),{header:true});
-  const body=rows.map((r,ri)=>{
-    const isTotal=r&&r.total; const cells=isTotal?r.cells:r;
-    return row(cells.map((c,ci)=>{
-      const obj=c&&typeof c==="object"; const text=obj?c.t:c;
-      const fill=isTotal?LIGHT:(ri%2?WHITE:LIGHT);
-      const jc=ci>0?'right':undefined;
-      return cell(txt(text,{sz:18,b:isTotal||(obj&&c.b),color:obj?c.color:undefined,jc}),{w:cols[ci],fill});
-    }).join(""));
-  }).join("");
-  return table(cols,head+body);
-}
-function callout(title,bodyParas,{fill=AMBERBG,bar=AMBER}={}){
-  const inner=para(run(title,{b:true,color:bar,sz:20}),{after:60})+bodyParas;
-  return table([CW],row(cell(inner,{w:CW,fill,leftBar:bar,borderColor:"E0D6BE",mar:{t:120,b:120,l:200,r:160}})));
-}
-function kpiCard(k,w){
-  const inner=txt(k.value,{b:true,color:NAVY,sz:30,jc:'center',after:20})+
-    txt(k.label,{color:GREY,sz:15,jc:'center',after:40})+
-    txt(k.status,{b:true,color:k.color,sz:15,jc:'center'});
-  return cell(inner,{w,fill:LIGHT,borderColor:"D9DEE4",mar:{t:120,b:120,l:80,r:80}});
-}
-const h2=t=>para(run(t,{}),{style:'Heading2',keepNext:true,bdrBottom:NAVY});
-function listItem(text,prefix){return txt(prefix+text,{sz:18,ind:{left:360,hanging:300}});}
-
-/* block bar (filled █ + track ░), returns run-xml */
-function blockBar(frac,color,max=14){
-  frac=Math.max(0,Math.min(1,frac)); const n=Math.max(1,Math.round(frac*max));
-  return run("\u2588".repeat(n),{color,sz:14})+run("\u2591".repeat(max-n),{color:TRACK,sz:14});
-}
-
-/* ============================ compute ============================ */
+/* ============================ compute (unchanged logic) ============================ */
 const usd=x=>`$${x.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const usd0=x=>`$${Math.round(x).toLocaleString('en-US')}`;
 const usdk=x=>`$${(x/1000).toFixed(1)}K`;
 const pct=x=>`${(x*100).toFixed(1)}%`;
 const sUsd=x=>(x>=0?"+":"\u2212")+`$${Math.abs(x).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const sPct=x=>(x>=0?"+":"\u2212")+`${Math.abs(x*100).toFixed(1)}%`;
-const arrow=x=>x>0?"\u25B2 ":(x<0?"\u25BC ":"");           // ▲ pos / ▼ neg / "" zero
-const dUsd=x=>arrow(x)+sUsd(x);                            // delta $ with arrow
-const dPct=x=>arrow(x)+sPct(x);                            // delta % with arrow
+const arrow=x=>x>0?"\u25B2 ":(x<0?"\u25BC ":"");
+const dUsd=x=>arrow(x)+sUsd(x);
+const dPct=x=>arrow(x)+sPct(x);
 const shortM=m=>{const[a,b]=String(m).split("-");if(!b)return m;const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];return `${M[+b-1]}'${a.slice(2)}`;};
 
 function compute(d){
@@ -221,7 +133,6 @@ function compute(d){
     {value:pct(conc.top10_share),label:"Top-10 concentration",status:conc.top10_share>0.70?"\u26A0 High risk":"OK",color:AMBER},
   ];
 
-  // top-N
   const prevLit=idx>0?months[idx-1]:null, prevGap=prevLit?zero.includes(prevLit):false;
   const topPrevNote=prevGap?`* Prev mo. = previous complete billed month; ${prevLit} was skipped (missing batch).`:"";
   const maxFocal=Math.max(...rev.top_clients.map(c=>c.focal));
@@ -294,143 +205,238 @@ function compute(d){
     metrics};
 }
 
+/* ============================ docx-js helpers ============================ */
+const HALR=(s,o={})=>new TextRun({text:String(s),bold:!!o.b,italics:!!o.i,
+  color:o.color||undefined,size:o.sz||20,font:"Arial"});
+
+function P(children,o={}){
+  const opts={children:Array.isArray(children)?children:[children],
+    alignment:o.jc==='right'?AlignmentType.RIGHT:(o.jc==='center'?AlignmentType.CENTER:AlignmentType.LEFT)};
+  const sp={}; if(o.before!=null)sp.before=o.before; if(o.after!=null)sp.after=o.after;
+  if(Object.keys(sp).length)opts.spacing=sp;
+  if(o.bdrBottom)opts.border={bottom:{style:BorderStyle.SINGLE,size:6,space:2,color:o.bdrBottom}};
+  return new Paragraph(opts);
+}
+const TXT=(text,o={})=>P([HALR(text,o)],o);
+const SPACER=(after=120)=>new Paragraph({children:[],spacing:{after}});
+
+const thin=c=>({style:BorderStyle.SINGLE,size:4,color:c});
+const nilB={style:BorderStyle.NONE,size:0,color:"FFFFFF"};
+function cellBorders(c="CCCCCC",leftBar){
+  return {top:thin(c),bottom:thin(c),right:thin(c),
+    left:leftBar?{style:BorderStyle.SINGLE,size:18,color:leftBar}:thin(c)};
+}
+const noBorders={top:nilB,bottom:nilB,left:nilB,right:nilB};
+
+function CELL(children,o={}){
+  const m=o.mar||{t:60,b:60,l:120,r:120};
+  return new TableCell({
+    width:{size:o.w||0,type:WidthType.DXA},
+    borders:o.noBorder?noBorders:cellBorders(o.borderColor||"CCCCCC",o.leftBar),
+    shading:o.fill?{fill:o.fill,type:ShadingType.CLEAR,color:"auto"}:undefined,
+    margins:{top:m.t,bottom:m.b,left:m.l,right:m.r},
+    verticalAlign:o.valign==='top'?VerticalAlign.TOP:VerticalAlign.CENTER,
+    children:Array.isArray(children)?children:[children]});
+}
+function ROW(cells,o={}){return new TableRow({children:cells,cantSplit:true,tableHeader:!!o.header});}
+function TBL(cols,rows,o={}){
+  return new Table({
+    width:{size:o.w||CW,type:WidthType.DXA},
+    columnWidths:cols,
+    borders:o.noBorder?{top:nilB,bottom:nilB,left:nilB,right:nilB,
+      insideHorizontal:nilB,insideVertical:nilB}:undefined,
+    rows});
+}
+
+/* numbered + bullet list paragraphs (proper numbering config, per skill) */
+const NUM=(text,ref)=>new Paragraph({numbering:{reference:ref,level:0},
+  children:[HALR(text,{sz:18})]});
+
+/* data table: rows are arrays of (string | {t,color,b}) or {total:true,cells:[...]} */
+function dataTable(cols,headers,rows){
+  const head=ROW(headers.map((h,i)=>CELL(TXT(h,{b:true,color:WHITE,sz:18}),
+    {w:cols[i],fill:NAVY,borderColor:NAVY})),{header:true});
+  const body=rows.map((r,ri)=>{
+    const isTotal=r&&r.total; const cells=isTotal?r.cells:r;
+    return ROW(cells.map((c,ci)=>{
+      const obj=c&&typeof c==="object"; const text=obj?c.t:c;
+      const fill=isTotal?LIGHT:(ri%2?WHITE:LIGHT);
+      const jc=ci>0?'right':undefined;
+      return CELL(TXT(text,{sz:18,b:isTotal||(obj&&c.b),color:obj?c.color:undefined,jc}),{w:cols[ci],fill});
+    }));
+  });
+  return TBL(cols,[head,...body]);
+}
+function callout(title,bodyParas,{fill=AMBERBG,bar=AMBER}={}){
+  const inner=[P([HALR(title,{b:true,color:bar,sz:20})],{after:60}),...bodyParas];
+  return TBL([CW],[ROW([CELL(inner,{w:CW,fill,leftBar:bar,borderColor:"E0D6BE",mar:{t:120,b:120,l:200,r:160}})])]);
+}
+function kpiCard(k,w){
+  return CELL([
+    TXT(k.value,{b:true,color:NAVY,sz:30,jc:'center',after:20}),
+    TXT(k.label,{color:GREY,sz:15,jc:'center',after:40}),
+    TXT(k.status,{b:true,color:k.color,sz:15,jc:'center'})],
+    {w,fill:LIGHT,borderColor:"D9DEE4",mar:{t:120,b:120,l:80,r:80}});
+}
+const h2=t=>P([HALR(t,{b:true,color:NAVY,sz:26})],{before:240,after:120,bdrBottom:NAVY});
+
+/* block bar runs (filled + track), returns TextRun[] */
+function blockBar(frac,color,max=14){
+  frac=Math.max(0,Math.min(1,frac)); const n=Math.max(1,Math.round(frac*max));
+  return [HALR("\u2588".repeat(n),{color,sz:14}),HALR("\u2591".repeat(max-n),{color:TRACK,sz:14})];
+}
+
 /* ============================ render ============================ */
 function render(M){
   const body=[];
-  // title band
-  body.push(table([CW],row(cell(
-    txt(M.meta.company.toUpperCase(),{b:true,color:ORANGE,sz:22,after:30})+
-    txt("Monthly Financial Report",{b:true,color:WHITE,sz:40,after:20})+
-    txt("Reporting period: "+M.meta.period_label,{color:"C9D4E3",sz:22}),
-    {w:CW,fill:NAVY,noBorder:true,mar:{t:200,b:160,l:240,r:240}}),{cantSplit:true}),{noBorder:true}));
-  body.push(txt(`Prepared by ${M.meta.prepared_by}   •   Date ${M.meta.date}   •   For: ${M.meta.for}`,{sz:16,color:GREY,before:120,after:20}));
-  body.push(txt("Source of truth: "+M.meta.source_portal+".",{sz:15,color:GREY,i:true,after:160}));
+
+  // title band (borderless 1-cell navy table)
+  body.push(TBL([CW],[ROW([CELL([
+    TXT(M.meta.company.toUpperCase(),{b:true,color:ORANGE,sz:22,after:30}),
+    TXT("Monthly Financial Report",{b:true,color:WHITE,sz:40,after:20}),
+    TXT("Reporting period: "+M.meta.period_label,{color:"C9D4E3",sz:22})],
+    {w:CW,noBorder:true,fill:NAVY,mar:{t:200,b:160,l:240,r:240}})])],{noBorder:true}));
+  body.push(TXT(`Prepared by ${M.meta.prepared_by}   •   Date ${M.meta.date}   •   For: ${M.meta.for}`,{sz:16,color:GREY,before:120,after:20}));
+  body.push(TXT("Source of truth: "+M.meta.source_portal+".",{sz:15,color:GREY,i:true,after:160}));
+
   // KPI strip
   const cw4=[2340,2340,2340,2340];
-  body.push(table(cw4,row(M.kpis.map((k,i)=>kpiCard(k,cw4[i])).join("")),{noBorder:true}));
-  body.push(txt(" ",{after:120}));
+  body.push(TBL(cw4,[ROW(M.kpis.map((k,i)=>kpiCard(k,cw4[i])))],{noBorder:true}));
+  body.push(SPACER(120));
+
   // integrity
-  body.push(callout("\u26A0  Data integrity — read this first",M.flags.map((f,i)=>listItem(f,`${i+1}. `)).join(""),{fill:AMBERBG,bar:AMBER}));
-  body.push(txt(" ",{after:120}));
+  body.push(callout("\u26A0  Data integrity — read this first",
+    M.flags.map(f=>NUM(f,"ig")),{fill:AMBERBG,bar:AMBER}));
+  body.push(SPACER(120));
+
   // bottom line
   body.push(h2("CFO bottom line (for Hermes → CEO)"));
-  M.bottom_line.forEach((t,i)=>body.push(listItem(t,`${i+1}. `)));
-  body.push(txt(" ",{after:80}));
+  M.bottom_line.forEach(t=>body.push(NUM(t,"bl")));
+  body.push(SPACER(80));
+
   // A
   body.push(h2("A.  Monthly revenue & result — "+M.meta.period_label));
-  body.push(para(run("Revenue: ",{b:true,sz:20})+run(M.A.headline,{b:true,color:NAVY,sz:24})+run("    "+M.A.sub,{color:GREY,sz:16}),{after:120}));
-  body.push(txt("Revenue by plan type:",{b:true,sz:17,after:60}));
+  body.push(P([HALR("Revenue: ",{b:true,sz:20}),HALR(M.A.headline,{b:true,color:NAVY,sz:24}),HALR("    "+M.A.sub,{color:GREY,sz:16})],{after:120}));
+  body.push(TXT("Revenue by plan type:",{b:true,sz:17,after:60}));
   body.push(dataTable([4680,2340,2340],["Plan type","Revenue","Share"],M.A.planRows));
-  body.push(txt(M.A.planNote,{i:true,sz:15,color:GREY,before:60,after:140}));
-  body.push(txt("Tracked OpEx (tooling, ads, AI only; not a full P&L):",{b:true,sz:17,after:60}));
+  body.push(TXT(M.A.planNote,{i:true,sz:15,color:GREY,before:60,after:140}));
+  body.push(TXT("Tracked OpEx (tooling, ads, AI only; not a full P&L):",{b:true,sz:17,after:60}));
   body.push(dataTable([4680,2340,2340],["Category","EUR","USD"],M.A.opexRows));
-  body.push(callout("Net result — net of tracked OpEx only (NOT operating profit)",
-    para(run(M.A.netEq,{sz:18})+run(M.A.netVal,{b:true,color:GREEN,sz:22})+run("   •   "+M.A.netSub,{sz:16,color:GREY}))+
-    txt(M.A.netCaveat,{i:true,sz:15,color:GREY,before:40}),{fill:GREENBG,bar:GREEN}));
-  // trend (bar table)
-  body.push(txt("Revenue trend — monthly",{b:true,sz:18,before:120,after:40}));
-  const trendRows=M.A.trend.map(t=>row(
-    cell(txt(t.label,{sz:16}),{w:1100})+
-    cell(para(blockBar(t.frac,t.color)),{w:5200})+
-    cell(txt(t.rev,{sz:16,jc:'right'}),{w:1530})+
-    cell(txt(t.mom,{sz:15,jc:'right',color:t.momColor}),{w:1530})
-  )).join("");
-  body.push(table([1100,5200,1530,1530],
-    row(["Month","","Revenue","MoM"].map((h,i)=>cell(txt(h,{b:true,color:WHITE,sz:16}),{w:[1100,5200,1530,1530][i],fill:NAVY,borderColor:NAVY})).join(""),{header:true})+trendRows));
+  body.push(callout("Net result — net of tracked OpEx only (NOT operating profit)",[
+    P([HALR(M.A.netEq,{sz:18}),HALR(M.A.netVal,{b:true,color:GREEN,sz:22}),HALR("   •   "+M.A.netSub,{sz:16,color:GREY})]),
+    TXT(M.A.netCaveat,{i:true,sz:15,color:GREY,before:40})],{fill:GREENBG,bar:GREEN}));
+
+  // trend bar table
+  body.push(TXT("Revenue trend — monthly",{b:true,sz:18,before:120,after:40}));
+  const tcols=[1100,5200,1530,1530];
+  const tHead=ROW(["Month","","Revenue","MoM"].map((h,i)=>CELL(TXT(h,{b:true,color:WHITE,sz:16}),{w:tcols[i],fill:NAVY,borderColor:NAVY})),{header:true});
+  const tBody=M.A.trend.map(t=>ROW([
+    CELL(TXT(t.label,{sz:16}),{w:tcols[0]}),
+    CELL(P(blockBar(t.frac,t.color)),{w:tcols[1]}),
+    CELL(TXT(t.rev,{sz:16,jc:'right'}),{w:tcols[2]}),
+    CELL(TXT(t.mom,{sz:15,jc:'right',color:t.momColor}),{w:tcols[3]})]));
+  body.push(TBL(tcols,[tHead,...tBody]));
+
   // B
   body.push(h2("B.  Trends & comparisons"));
   body.push(callout("YoY (month) vs same month last year  •  CLEAN, trust this",
-    para(run(M.B.yoyPre,{sz:18})+run(M.B.yoyVal,{b:true,color:GREEN,sz:20})),{fill:GREENBG,bar:GREEN}));
-  body.push(txt(" ",{after:80}));
-  body.push(txt("3-month block (T3M) vs prior T3M:",{b:true,sz:17,after:60}));
+    [P([HALR(M.B.yoyPre,{sz:18}),HALR(M.B.yoyVal,{b:true,color:GREEN,sz:20})])],{fill:GREENBG,bar:GREEN}));
+  body.push(SPACER(80));
+  body.push(TXT("3-month block (T3M) vs prior T3M:",{b:true,sz:17,after:60}));
   body.push(dataTable([4680,2340,2340],["Window","Value","Change"],M.B.t3mRows));
-  if(M.B.t3mNote)body.push(txt(M.B.t3mNote,{i:true,sz:15,color:GREY,before:60,after:140}));
-  body.push(txt(`Growth decomposition (material clients, ${M.B.decompWindow}):`,{b:true,sz:17,after:60}));
+  if(M.B.t3mNote)body.push(TXT(M.B.t3mNote,{i:true,sz:15,color:GREY,before:60,after:140}));
+  body.push(TXT(`Growth decomposition (material clients, ${M.B.decompWindow}):`,{b:true,sz:17,after:60}));
   body.push(dataTable([4680,2340,2340],["Movement","Amount","Clients"],
     M.B.decompRows.map(r=>[{t:r.label,color:r.color},{t:r.amt,color:r.color},String(r.n)])
       .concat([{total:true,cells:["Net change",M.B.decompNet,String(M.B.decompMaterial)]}])));
-  if(M.B.decompNote)body.push(txt(M.B.decompNote,{i:true,sz:15,color:GREY,before:60,after:120}));
+  if(M.B.decompNote)body.push(TXT(M.B.decompNote,{i:true,sz:15,color:GREY,before:60,after:120}));
+
   // C
   body.push(h2("C.  Customers — Top "+M.C.topRows.length));
   const cCols=[2520,1480,1300,1080,1480,1500];
-  const cHead=row(["Client","This mo","Prev mo*","MoM","T3M","Same mo LY"].map((h,i)=>cell(txt(h,{b:true,color:WHITE,sz:18}),{w:cCols[i],fill:NAVY,borderColor:NAVY})).join(""),{header:true});
+  const cHead=ROW(["Client","This mo","Prev mo*","MoM","T3M","Same mo LY"].map((h,i)=>CELL(TXT(h,{b:true,color:WHITE,sz:18}),{w:cCols[i],fill:NAVY,borderColor:NAVY})),{header:true});
   const cBody=M.C.topRows.map((r,ri)=>{const fill=ri%2?WHITE:LIGHT;
-    return row(
-      cell(txt(r.label,{sz:17,color:r.new?ORANGE:undefined}),{w:cCols[0],fill})+
-      cell(para(run(r.thisDisp+" ",{sz:16,jc:'right'})+blockBar(r.frac,r.new?ORANGE:NAVY,6),{jc:'right'}),{w:cCols[1],fill})+
-      cell(txt(r.prev,{sz:16,jc:'right',color:r.prevColor}),{w:cCols[2],fill})+
-      cell(txt(r.mom,{sz:16,jc:'right',color:r.momColor}),{w:cCols[3],fill})+
-      cell(txt(r.t3m,{sz:16,jc:'right'}),{w:cCols[4],fill})+
-      cell(txt(r.yoy,{sz:16,jc:'right',color:r.yoyColor}),{w:cCols[5],fill})
-    );}).join("");
-  body.push(table(cCols,cHead+cBody));
-  if(M.C.topPrevNote)body.push(txt(M.C.topPrevNote,{i:true,sz:14,color:GREY,before:50}));
-  if(M.C.topNote)body.push(txt(M.C.topNote,{sz:16,color:GREEN,before:60,after:80}));
-  // concentration stacked bar (top-10 kept)
-  body.push(txt("Revenue concentration (top-10)",{b:true,sz:17,before:120,after:40}));
+    return ROW([
+      CELL(TXT(r.label,{sz:17,color:r.new?ORANGE:undefined}),{w:cCols[0],fill}),
+      CELL(P([HALR(r.thisDisp+" ",{sz:16}),...blockBar(r.frac,r.new?ORANGE:NAVY,6)],{jc:'right'}),{w:cCols[1],fill}),
+      CELL(TXT(r.prev,{sz:16,jc:'right',color:r.prevColor}),{w:cCols[2],fill}),
+      CELL(TXT(r.mom,{sz:16,jc:'right',color:r.momColor}),{w:cCols[3],fill}),
+      CELL(TXT(r.t3m,{sz:16,jc:'right'}),{w:cCols[4],fill}),
+      CELL(TXT(r.yoy,{sz:16,jc:'right',color:r.yoyColor}),{w:cCols[5],fill})]);});
+  body.push(TBL(cCols,[cHead,...cBody]));
+  if(M.C.topPrevNote)body.push(TXT(M.C.topPrevNote,{i:true,sz:14,color:GREY,before:50}));
+  if(M.C.topNote)body.push(TXT(M.C.topNote,{sz:16,color:GREEN,before:60,after:80}));
+
+  // concentration stacked bar
+  body.push(TXT("Revenue concentration (top-10)",{b:true,sz:17,before:120,after:40}));
   const c=M.C.conc, w1=Math.round(CW*c.top1),w2=Math.round(CW*c.top2_10),w3=CW-w1-w2;
-  body.push(table([w1,w2,w3],row(
-    cell(txt(`Top-1  ${pct(c.top1)}`,{b:true,color:WHITE,sz:14,jc:'center'}),{w:w1,fill:ORANGE,borderColor:WHITE})+
-    cell(txt(`Top 2–10  ${pct(c.top2_10)}`,{b:true,color:WHITE,sz:14,jc:'center'}),{w:w2,fill:NAVY,borderColor:WHITE})+
-    cell(txt(`Rest  ${pct(c.rest)}`,{color:GREY,sz:14,jc:'center'}),{w:w3,fill:LIGHT,borderColor:WHITE})),{noBorder:true}));
-  body.push(callout("\u26A0  Concentration risk",
-    para(run(M.C.concPre,{b:true,sz:18})+run(M.C.concPost,{sz:16}))+txt(M.C.concReco,{sz:16,before:40}),{fill:AMBERBG,bar:AMBER}));
-  if(M.C.hygiene)body.push(txt(M.C.hygiene,{i:true,sz:14,color:GREY,before:60,after:80}));
+  body.push(TBL([w1,w2,w3],[ROW([
+    CELL(TXT(`Top-1  ${pct(c.top1)}`,{b:true,color:WHITE,sz:14,jc:'center'}),{w:w1,fill:ORANGE,borderColor:WHITE}),
+    CELL(TXT(`Top 2–10  ${pct(c.top2_10)}`,{b:true,color:WHITE,sz:14,jc:'center'}),{w:w2,fill:NAVY,borderColor:WHITE}),
+    CELL(TXT(`Rest  ${pct(c.rest)}`,{color:GREY,sz:14,jc:'center'}),{w:w3,fill:LIGHT,borderColor:WHITE})])],{noBorder:true}));
+  body.push(callout("\u26A0  Concentration risk",[
+    P([HALR(M.C.concPre,{b:true,sz:18}),HALR(M.C.concPost,{sz:16})]),
+    TXT(M.C.concReco,{sz:16,before:40})],{fill:AMBERBG,bar:AMBER}));
+  if(M.C.hygiene)body.push(TXT(M.C.hygiene,{i:true,sz:14,color:GREY,before:60,after:80}));
+
   // D
   body.push(h2("D.  Run-rate & forward"));
-  body.push(txt("ARR snapshot (recurring book, so MRR ≈ monthly revenue):",{b:true,sz:17,after:60}));
+  body.push(TXT("ARR snapshot (recurring book, so MRR ≈ monthly revenue):",{b:true,sz:17,after:60}));
   body.push(dataTable([5560,1900,1900],["Basis","MRR","ARR"],M.D.arrRows));
-  body.push(txt(M.D.arrReco,{sz:16,before:60,after:60}));
-  body.push(listItem(M.D.pipelineNote,"•  "));
-  body.push(txt(" ",{after:60}));
+  body.push(TXT(M.D.arrReco,{sz:16,before:60,after:60}));
+  body.push(NUM(M.D.pipelineNote,"bul"));
+  body.push(SPACER(60));
+
   // E
   body.push(h2("E.  Unit economics & efficiency"));
-  body.push(listItem(M.E.cacNote,"•  ")); body.push(listItem(M.E.toolNote,"•  "));
-  body.push(txt(" ",{after:60}));
+  body.push(NUM(M.E.cacNote,"bul"));
+  body.push(NUM(M.E.toolNote,"bul"));
+  body.push(SPACER(60));
+
   // F
   body.push(h2("F.  Cash & runway"));
-  body.push(callout(M.F.title,M.F.lines.map((l,i)=>txt(l,{sz:16,before:i?40:undefined})).join(""),{fill:GREYBG,bar:GREY}));
-  body.push(txt(" ",{after:80}));
+  body.push(callout(M.F.title,M.F.lines.map((l,i)=>TXT(l,{sz:16,before:i?40:undefined})),{fill:GREYBG,bar:GREY}));
+  body.push(SPACER(80));
+
   // metrics
   body.push(h2("SaaS metrics summary"));
-  body.push(dataTable([2860,3100,1700,1700],["Metric","Value","Target","Status"],M.metrics.map(r=>[r[0],r[1],r[2],r[3]])));
-  body.push(txt("— End of report —",{jc:'center',color:GREY,sz:15,before:240}));
+  body.push(dataTable([2860,3100,1700,1700],["Metric","Value","Target","Status"],
+    M.metrics.map(r=>[r[0],r[1],r[2],r[3]])));
+  body.push(TXT("— End of report —",{jc:'center',color:GREY,sz:15,before:240}));
 
-  const sectPr=`<w:sectPr><w:footerReference w:type="default" r:id="rId2"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1080" w:right="1440" w:bottom="1080" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;
-  const document=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body.join("")}${sectPr}</w:body></w:document>`;
+  // footer with Page X of Y
+  const footer=new Footer({children:[new Paragraph({
+    alignment:AlignmentType.CENTER,
+    border:{top:{style:BorderStyle.SINGLE,size:4,space:6,color:"D9DEE4"}},
+    children:[
+      HALR(`${M.meta.company} — Monthly Financial Report — ${M.meta.period_label}   •   Confidential   •   Page `,{color:GREY,sz:14}),
+      new TextRun({children:[PageNumber.CURRENT],color:GREY,size:14,font:"Arial"}),
+      HALR(" of ",{color:GREY,sz:14}),
+      new TextRun({children:[PageNumber.TOTAL_PAGES],color:GREY,size:14,font:"Arial"})]})]});
 
-  const footer=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:pBdr><w:top w:val="single" w:sz="4" w:space="6" w:color="D9DEE4"/></w:pBdr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t xml:space="preserve">${esc(M.meta.company)} — Monthly Financial Report — ${esc(M.meta.period_label)}   •   Confidential   •   Page </w:t></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t xml:space="preserve"> of </w:t></w:r><w:fldSimple w:instr=" NUMPAGES "><w:r><w:rPr><w:color w:val="6B7280"/><w:sz w:val="14"/></w:rPr><w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>`;
-
-  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:rPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="240" w:after="120"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="16365C"/><w:sz w:val="26"/></w:rPr></w:style></w:styles>`;
-
-  const ct=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>`;
-  const rootRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
-  const docRels=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>`;
-
-  return zip([
-    {name:'[Content_Types].xml',data:Bx(ct)},
-    {name:'_rels/.rels',data:Bx(rootRels)},
-    {name:'word/document.xml',data:Bx(document)},
-    {name:'word/styles.xml',data:Bx(styles)},
-    {name:'word/footer1.xml',data:Bx(footer)},
-    {name:'word/_rels/document.xml.rels',data:Bx(docRels)},
-  ]);
+  return new Document({
+    styles:{default:{document:{run:{font:"Arial",size:20}}}},
+    numbering:{config:[
+      {reference:"bl",levels:[{level:0,format:LevelFormat.DECIMAL,text:"%1.",alignment:AlignmentType.LEFT,
+        style:{run:{size:18,font:"Arial"},paragraph:{indent:{left:360,hanging:300}}}}]},
+      {reference:"ig",levels:[{level:0,format:LevelFormat.DECIMAL,text:"%1.",alignment:AlignmentType.LEFT,
+        style:{run:{size:18,font:"Arial"},paragraph:{indent:{left:360,hanging:300}}}}]},
+      {reference:"bul",levels:[{level:0,format:LevelFormat.BULLET,text:"\u2022",alignment:AlignmentType.LEFT,
+        style:{run:{size:18,font:"Arial"},paragraph:{indent:{left:360,hanging:300}}}}]},
+    ]},
+    sections:[{
+      properties:{page:{size:{width:12240,height:15840},margin:{top:1080,right:1440,bottom:1080,left:1440}}},
+      footers:{default:footer},
+      children:body}]});
 }
 
 /* ============================ main ============================ */
 const inp=process.argv[2]||'input.json', out=process.argv[3]||'Monthly_Financial_Report.docx';
 const data=JSON.parse(fs.readFileSync(inp,'utf8'));
-fs.writeFileSync(out, render(compute(data)));
-console.log('✓ wrote', out);
+Packer.toBuffer(render(compute(data))).then(buf=>{fs.writeFileSync(out,buf);console.log('✓ wrote',out);});
 ```
 
-## Example input (the exact contract — save your real data as `input.json` in this shape)
+## Example input (the exact contract — save your real data as input.json in this shape)
 
 ```json
 {
